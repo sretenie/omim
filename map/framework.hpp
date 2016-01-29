@@ -225,11 +225,17 @@ public:
   /// Scans and loads all kml files with bookmarks in WritableDir.
   void LoadBookmarks();
 
+  /// Save all bookmarks to kml files.
+  void SaveBookmarks();
+
   /// @return Created bookmark index in category.
   size_t AddBookmark(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm);
+  size_t AddBookmarkInMemory(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm);
   /// @return New moved bookmark index in category.
   size_t MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t newCatIndex);
+  size_t MoveBookmarkInMemory(size_t bmIndex, size_t curCatIndex, size_t newCatIndex);
   void ReplaceBookmark(size_t catIndex, size_t bmIndex, BookmarkData const & bm);
+  void ReplaceBookmarkInMemory(size_t catIndex, size_t bmIndex, BookmarkData const & bm);
   /// @return Created bookmark category index.
   size_t AddCategory(string const & categoryName);
 

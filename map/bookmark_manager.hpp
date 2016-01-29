@@ -38,11 +38,16 @@ public:
 
   void InitBookmarks();
 
+  void SaveBookmarks();
+
   /// Client should know where it adds bookmark
   size_t AddBookmark(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm);
+  size_t AddBookmarkInMemory(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm);
   /// Client should know where it moves bookmark
   size_t MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t newCatIndex);
+  size_t MoveBookmarkInMemory(size_t bmIndex, size_t curCatIndex, size_t newCatIndex);
   void ReplaceBookmark(size_t catIndex, size_t bmIndex, BookmarkData const & bm);
+  void ReplaceBookmarkInMemory(size_t catIndex, size_t bmIndex, BookmarkData const & bm);
 
   size_t LastEditedBMCategory();
   string LastEditedBMType() const;

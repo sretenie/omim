@@ -513,9 +513,19 @@ void Framework::LoadBookmarks()
   m_bmManager.LoadBookmarks();
 }
 
+void Framework::SaveBookmarks()
+{
+  m_bmManager.SaveBookmarks();
+}
+
 size_t Framework::AddBookmark(size_t categoryIndex, const m2::PointD & ptOrg, BookmarkData & bm)
 {
   return m_bmManager.AddBookmark(categoryIndex, ptOrg, bm);
+}
+
+size_t Framework::AddBookmarkInMemory(size_t categoryIndex, const m2::PointD & ptOrg, BookmarkData & bm)
+{
+  return m_bmManager.AddBookmarkInMemory(categoryIndex, ptOrg, bm);
 }
 
 size_t Framework::MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t newCatIndex)
@@ -523,7 +533,17 @@ size_t Framework::MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t newCat
   return m_bmManager.MoveBookmark(bmIndex, curCatIndex, newCatIndex);
 }
 
+size_t Framework::MoveBookmarkInMemory(size_t bmIndex, size_t curCatIndex, size_t newCatIndex)
+{
+  return m_bmManager.MoveBookmark(bmIndex, curCatIndex, newCatIndex);
+}
+
 void Framework::ReplaceBookmark(size_t catIndex, size_t bmIndex, BookmarkData const & bm)
+{
+  m_bmManager.ReplaceBookmark(catIndex, bmIndex, bm);
+}
+
+void Framework::ReplaceBookmarkInMemory(size_t catIndex, size_t bmIndex, BookmarkData const & bm)
 {
   m_bmManager.ReplaceBookmark(catIndex, bmIndex, bm);
 }

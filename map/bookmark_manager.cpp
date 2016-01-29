@@ -89,6 +89,16 @@ void BookmarkManager::InitBookmarks()
   }
 }
 
+void BookmarkManager::SaveBookmarks()
+{
+  for (auto it = m_categories.begin(); it != m_categories.end(); ++it)
+  {
+    BookmarkCategory * cat = *it;
+    BookmarkCategory::Guard guard(*cat);
+    cat->SaveToKMLFile();
+  }
+}
+
 size_t BookmarkManager::AddBookmark(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm)
 {
   bm.SetTimeStamp(time(0));
@@ -108,6 +118,26 @@ size_t BookmarkManager::AddBookmark(size_t categoryIndex, m2::PointD const & ptO
   // Bookmark always is pushed front.
   return 0;
 }
+
+size_t BookmarkManager::AddBookmarkInMemory(size_t categoryIndex, m2::PointD const & ptOrg, BookmarkData & bm)
+{
+  bm.SetTimeStamp(time(0));
+  bm.SetScale(m_framework.GetDrawScale());
+
+  BookmarkCategory * pCat = m_categories[categoryIndex];
+
+  BookmarkCategory::Guard guard(*pCat);
+  static_cast<Bookmark *>(guard.m_controller.CreateUserMark(ptOrg))->SetData(bm);
+  guard.m_controller.SetIsVisible(true);
+
+  m_lastCategoryUrl = pCat->GetFileName();
+  m_lastType = bm.GetType();
+  SaveState();
+
+  // Bookmark always is pushed front.
+  return 0;
+}
+
 
 size_t BookmarkManager::MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t newCatIndex)
 {
@@ -129,12 +159,41 @@ size_t BookmarkManager::MoveBookmark(size_t bmIndex, size_t curCatIndex, size_t 
   return AddBookmark(newCatIndex, ptOrg, data);
 }
 
+size_t BookmarkManager::MoveBookmarkInMemory(size_t bmIndex, size_t curCatIndex, size_t newCatIndex)
+{
+  BookmarkData data;
+  m2::PointD ptOrg;
+
+  // guard must be released before AddBookmark to prevent deadlock
+  {
+    BookmarkCategory * cat = m_framework.GetBmCategory(curCatIndex);
+    BookmarkCategory::Guard guard(*cat);
+    Bookmark const * bm = static_cast<Bookmark const *>(guard.m_controller.GetUserMark(bmIndex));
+    data = bm->GetData();
+    ptOrg = bm->GetPivot();
+
+    guard.m_controller.DeleteUserMark(bmIndex);
+  }
+
+  return AddBookmark(newCatIndex, ptOrg, data);
+}
+
 void BookmarkManager::ReplaceBookmark(size_t catIndex, size_t bmIndex, BookmarkData const & bm)
 {
   BookmarkCategory * cat = m_categories[catIndex];
   BookmarkCategory::Guard guard(*cat);
   static_cast<Bookmark *>(guard.m_controller.GetUserMarkForEdit(bmIndex))->SetData(bm);
   cat->SaveToKMLFile();
+
+  m_lastType = bm.GetType();
+  SaveState();
+}
+
+void BookmarkManager::ReplaceBookmarkInMemory(size_t catIndex, size_t bmIndex, BookmarkData const & bm)
+{
+  BookmarkCategory * cat = m_categories[catIndex];
+  BookmarkCategory::Guard guard(*cat);
+  static_cast<Bookmark *>(guard.m_controller.GetUserMarkForEdit(bmIndex))->SetData(bm);
 
   m_lastType = bm.GetType();
   SaveState();
