@@ -21,6 +21,7 @@ public:
   virtual dp::Anchor GetAnchor() const = 0;
   virtual float GetDepth() const = 0;
   virtual bool RunCreationAnim() const = 0;
+  virtual string const & GetText() const = 0;
 };
 
 class UserLineMark

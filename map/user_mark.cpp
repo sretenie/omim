@@ -20,7 +20,7 @@ string ToString(UserMark::Type t)
 }
 
 UserMark::UserMark(m2::PointD const & ptOrg, UserMarkContainer * container)
-  : m_ptOrg(ptOrg), m_container(container)
+  : m_ptOrg(ptOrg), m_container(container), m_text("")
 {
 }
 

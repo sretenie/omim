@@ -582,13 +582,13 @@ void Framework::ShowBookmark(BookmarkAndCategory const & bnc)
   StopLocationFollow();
 
   // show ballon above
-  Bookmark const * mark = static_cast<Bookmark const *>(GetBmCategory(bnc.first)->GetUserMark(bnc.second));
+  Bookmark const * mark = GetBmCategory(bnc.first)->GetBookmark(bnc.second);
 
-  double scale = mark->GetScale();
-  if (scale == -1.0)
-    scale = scales::GetUpperComfortScale();
+//  double scale = mark->GetScale();
+//  if (scale == -1.0)
+//    scale = scales::GetUpperComfortScale();
 
-  CallDrapeFunction(bind(&df::DrapeEngine::SetModelViewCenter, _1, mark->GetPivot(), scale, true));
+  CallDrapeFunction(bind(&df::DrapeEngine::SetModelViewCenter, _1, mark->GetPivot(), /*scale*/16.0, true));
   ActivateUserMark(mark, true);
 }
 

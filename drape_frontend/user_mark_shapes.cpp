@@ -1,12 +1,16 @@
 #include "user_mark_shapes.hpp"
 
 #include "line_shape.hpp"
+#include "text_shape.hpp"
+#include "visual_params.hpp"
 
 #include "drape/utils/vertex_decl.hpp"
 #include "drape/shader_def.hpp"
 #include "drape/attribute_provider.hpp"
 
 #include "geometry/spline.hpp"
+
+#include "base/logging.hpp"
 
 namespace df
 {
@@ -165,6 +169,32 @@ void CacheUserPoints(UserMarksProvider const * provider,
   attribProvider.InitStream(0, UPV::GetBinding(), make_ref(buffer.data()));
 
   batcher->InsertListOfStrip(state, make_ref(&attribProvider), dp::Batcher::VertexPerQuad);
+
+//  for (size_t i = 0; i < marks.size(); ++i)
+//  {
+//    UserPointMark const * pointMark = marks[i];
+//    dp::Anchor anchor = pointMark->GetAnchor();
+//    string text = pointMark->GetText();
+//    if (!text.empty())
+//    {
+//      LOG(LWARNING, ("Trying show text", text));
+//      m2::PointD pivot = pointMark->GetPivot();
+//      TextViewParams textParams;
+//      textParams.m_featureID = FeatureID();
+//      textParams.m_primaryText = text;
+//      textParams.m_rank = 0;
+//      textParams.m_anchor = dp::Center;
+//      textParams.m_depth = pointMark->GetDepth();
+//      textParams.m_minVisibleScale = 1;
+//      textParams.m_primaryTextFont = dp::FontDecl(dp::Color::White(), 32.0f, dp::Color::Black());
+//      textParams.m_primaryOffset = m2::PointF(0, 0);
+//      textParams.m_primaryOptional = true;
+//      textParams.m_secondaryOptional = true;
+//      textParams.m_posZ = 10.0f;
+
+//      TextShape(m2::PointF(0.0f, 0.0f), textParams, false).Draw(batcher, textures);
+//    }
+//  }
 }
 
 void CacheUserLines(UserMarksProvider const * provider,

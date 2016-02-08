@@ -43,6 +43,10 @@ public:
   dp::Anchor GetAnchor() const override;
   float GetDepth() const override;
   bool RunCreationAnim() const override;
+  string const & GetText() const override
+  {
+    return m_text;
+  }
   ///////////////////////////////////////////////////////
 
   UserMarkContainer const * GetContainer() const;
@@ -56,6 +60,9 @@ public:
 protected:
   m2::PointD m_ptOrg;
   mutable UserMarkContainer * m_container;
+
+private:
+  string m_text;
 };
 
 class UserMarkCopy

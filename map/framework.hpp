@@ -568,6 +568,11 @@ public:
   void Save3dMode(bool allow3d, bool allow3dBuildings);
   void Load3dMode(bool & allow3d, bool & allow3dBuildings);
 
+  inline ScreenBase const &GetScreenBase() const
+  {
+    return m_currentModelView;
+  }
+
 private:
   void SetRouterImpl(routing::RouterType type);
   void RemoveRoute(bool deactivateFollowing);

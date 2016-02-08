@@ -31,10 +31,23 @@ Bookmark::Bookmark(m2::PointD const & ptOrg, UserMarkContainer * container)
 {
 }
 
+Bookmark::Bookmark(m2::PointD const & ptOrg, UserMarkContainer * container, bool runCreationAnim)
+  : TBase(ptOrg, container)
+  , m_runCreationAnim(runCreationAnim)
+{
+}
+
 Bookmark::Bookmark(BookmarkData const & data, m2::PointD const & ptOrg, UserMarkContainer * container)
   : TBase(ptOrg, container)
   , m_data(data)
   , m_runCreationAnim(true)
+{
+}
+
+Bookmark::Bookmark(BookmarkData const & data, m2::PointD const & ptOrg, UserMarkContainer * container, bool runCreationAnim)
+  : TBase(ptOrg, container)
+  , m_data(data)
+  , m_runCreationAnim(runCreationAnim)
 {
 }
 
@@ -181,6 +194,205 @@ void BookmarkCategory::DeleteTrack(size_t index)
   SetDirty();
   ASSERT_LESS(index, m_tracks.size(), ());
   m_tracks.erase(next(m_tracks.begin(), index));
+  ReleaseController();
+}
+
+UserMark * BookmarkCategory::CreateUserMark(m2::PointD const & ptOrg)
+{
+  m_Bookmarks.push_front(unique_ptr<Bookmark>(new Bookmark(ptOrg, this)));
+  return m_Bookmarks.front().get();
+}
+
+void BookmarkCategory::DeleteUserMark(size_t index)
+{
+  ASSERT_LESS(index, m_Bookmarks.size(), ());
+  if (index < m_Bookmarks.size())
+    m_Bookmarks.erase(m_Bookmarks.begin() + index);
+  else
+    LOG(LWARNING, ("Trying to delete non-existing item at index", index));
+}
+
+void BookmarkCategory::DeleteBookmarkByUid(int const & uid)
+{
+  for (auto itr = m_Bookmarks.begin(); itr != m_Bookmarks.end(); itr++)
+  {
+    if (itr->get()->GetUid() == uid)
+    {
+      m_Bookmarks.erase(itr);
+      return;
+    }
+  }
+}
+
+void BookmarkCategory::DeleteAllBookmarks()
+{
+  RequestController();
+  m_Bookmarks.clear();
+  ReleaseController();
+}
+
+Bookmark const * BookmarkCategory::GetBookmark(size_t index) const
+{
+  ASSERT_LESS(index, m_Bookmarks.size(), ());
+  return m_Bookmarks[index].get();
+}
+
+pair<int, Bookmark const *> BookmarkCategory::GetBookmarkByUid(int const & uid) const
+{
+  int index = 0;
+  for (auto itr = m_Bookmarks.cbegin(); itr != m_Bookmarks.cend(); itr++)
+  {
+    Bookmark const * bookmark = itr->get();
+    if (bookmark->GetUid() == uid)
+      return pair<int, Bookmark const *>(index, bookmark);
+    index++;
+  }
+
+  return pair<int, Bookmark const *>(-1, nullptr);
+}
+
+#define    OFFSET    268435456
+#define    RADIUS    85445659.4471
+
+#define    PI    3.141592653589793238462
+
+double lonToX(double lon) {
+    return round(OFFSET + RADIUS * lon * PI / 180);
+}
+
+double latToY(double lat) {
+    return round(OFFSET - RADIUS * log( (1 + sin( lat * PI / 180) ) / (1 - sin( lat * PI / 180 ) ) ) / 2);
+}
+
+long PixelDistance(double lat1, double lon1, double lat2, double lon2, int zoom) {
+    double x1 = lonToX(lon1);
+    double y1 = latToY(lat1);
+
+    double x2 = lonToX(lon2);
+    double y2 = latToY(lat2);
+
+    return (long)sqrt(pow((x1 - x2), 2) + pow((y1 - y2), 2)) >> (19 - zoom);
+}
+
+m2::PointD NewClasterPoint(m2::PointD const &p1, m2::PointD const &p2, float movePercent)
+{
+  double pixel = sqrt(pow((p1.x - p2.x), 2) + pow((p1.y - p1.y), 2));
+  double cosin = (p1.x - p2.x) / pixel;
+  double sinus = (p1.y - p1.y) / pixel;
+  double distanceMovePixel = pixel * movePercent;
+  double newXMove = cosin * distanceMovePixel;
+  double newYMove = sinus * distanceMovePixel;
+
+  return m2::PointD(p1.x - newXMove, p1.y - newYMove);
+}
+
+struct ClasterData
+{
+  unsigned int size;
+  BookmarkData data;
+  m2::PointD point;
+};
+
+void BookmarkCategory::ClusterMarks(long pixelDistance, unsigned int clusterSize, int minZoom, int maxZoom)
+{
+  int zoom = m_framework.GetDrawScale();
+  if (zoom < minZoom || zoom > maxZoom)
+  {
+    RequestController();
+    Clear();
+    for (auto itr = m_Bookmarks.begin(); itr != m_Bookmarks.end(); itr++)
+    {
+      Bookmark const * mark = itr->get();
+      static_cast<Bookmark*>(TBase::CreateUserMark(mark->GetPivot()))->SetData(mark->GetData());
+    }
+    ReleaseController();
+    return;
+  }
+
+  vector<Bookmark*> marks;
+  marks.reserve(m_Bookmarks.size());
+  for (auto itr = m_Bookmarks.begin(); itr != m_Bookmarks.end(); itr++)
+    marks.push_back(itr->get());
+
+  unsigned int moreThan = clusterSize;
+  if(moreThan > 0) moreThan -= 1;
+
+  vector<ClasterData> clustered;
+
+  for (unsigned int i = 0; i < marks.size(); )
+  {
+    unsigned int cluster = 0;
+    Bookmark const *marker = marks.at(0);
+
+    marks.erase(marks.begin());
+
+    vector<int> cluterFindedIndex;
+
+    m2::PointD clusterPoint = marker->GetPivot();
+    m2::PointD minPoint = clusterPoint;
+    m2::PointD maxPoint = minPoint;
+
+    float movePercent = 0.5f;
+
+    for (unsigned int j = 0; j < marks.size(); j++)
+    {
+      Bookmark const *arg = marks.at(j);
+      m2::PointD currentLocation = marker->GetPivot();
+      m2::PointD clusterLocation = arg->GetPivot();
+      long pixel = PixelDistance(currentLocation.y,
+                    currentLocation.x,
+                    clusterLocation.y,
+                    clusterLocation.x,
+                    zoom);
+
+      if (pixelDistance > pixel)
+      {
+        if (maxPoint < clusterLocation)
+          maxPoint = clusterLocation;
+        if (clusterLocation < minPoint)
+          minPoint = clusterLocation;
+        cluster++;
+        cluterFindedIndex.push_back(j);
+        clusterPoint = NewClasterPoint(clusterPoint, clusterLocation, movePercent);
+        movePercent -= (movePercent * 0.03);
+      }
+    }
+
+    if (cluster > moreThan)
+    {
+      for (unsigned int k = 0; k < cluterFindedIndex.size(); k++)
+      {
+        marks.erase(marks.begin() + (cluterFindedIndex.at(k) - k));
+      }
+      double extends = minPoint.Length(maxPoint) * 0.05;
+      m2::PointD extendPoint(extends, extends);
+      minPoint -= extendPoint;
+      maxPoint += extendPoint;
+      ClasterData data;
+      data.size = cluster + 1;
+      data.data = BookmarkData("group", "placemark-red");
+      data.data.SetText(std::to_string(data.size));
+      data.data.SetIsGroup(true);
+      data.data.SetGroupBounds(m2::RectD(minPoint, maxPoint));
+      data.point = clusterPoint;
+      clustered.push_back(data);
+    }
+    else
+    {
+      ClasterData data;
+      data.size = 1;
+      data.data = marker->GetData();
+      data.point = marker->GetPivot();
+      clustered.push_back(data);
+    }
+  }
+
+  RequestController();
+  Clear();
+  for (auto itr = clustered.begin(); itr != clustered.end(); itr++)
+  {
+    static_cast<Bookmark*>(TBase::CreateUserMark(itr->point))->SetData(itr->data);
+  }
   ReleaseController();
 }
 
