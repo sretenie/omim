@@ -190,22 +190,22 @@ void BackendRenderer::AcceptMessage(ref_ptr<Message> message)
     }
   case Message::CountryInfoUpdate:
     {
-      ref_ptr<CountryInfoUpdateMessage> msg = message;
-      gui::CountryStatusHelper & helper = gui::DrapeGui::Instance().GetCountryStatusHelper();
-      if (!msg->NeedShow())
-      {
-        // Country is already loaded, so there is no need to show status GUI
-        // even if this country is updating.
-        helper.Clear();
-      }
-      else
-      {
-        gui::CountryInfo const & info = msg->GetCountryInfo();
-        if (msg->IsCurrentCountry() || helper.GetCountryIndex() == info.m_countryIndex)
-        {
-          helper.SetCountryInfo(info);
-        }
-      }
+//      ref_ptr<CountryInfoUpdateMessage> msg = message;
+//      gui::CountryStatusHelper & helper = gui::DrapeGui::Instance().GetCountryStatusHelper();
+//      if (!msg->NeedShow())
+//      {
+//        // Country is already loaded, so there is no need to show status GUI
+//        // even if this country is updating.
+//        helper.Clear();
+//      }
+//      else
+//      {
+//        gui::CountryInfo const & info = msg->GetCountryInfo();
+//        if (msg->IsCurrentCountry() /*|| helper.GetCountryIndex() == info.m_countryIndex*/)
+//        {
+//          helper.SetCountryInfo(info);
+//        }
+//      }
       break;
     }
   case Message::AddRoute:

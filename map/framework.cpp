@@ -944,6 +944,9 @@ void Framework::UpdateCountryInfo(storage::TIndex const & countryIndex, bool isC
   }
 
   m_drapeEngine->SetCountryInfo(countryInfo, isCurrentCountry);
+
+  if (m_downloadMapRequestFn != nullptr)
+    m_downloadMapRequestFn(countryIndex);
 }
 
 void Framework::MemoryWarning()
