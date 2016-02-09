@@ -1713,14 +1713,14 @@ PoiMarkPoint * Framework::GetAddressMark(m2::PointD const & globalPoint) const
   return mark;
 }
 
-void Framework::ActivateUserMark(UserMark const * mark, bool needAnim)
+void Framework::ActivateUserMark(UserMark const * mark, bool needAnim, bool isLong)
 {
   if (!m_activateUserMarkFn)
       return;
 
   if (mark)
   {
-    m_activateUserMarkFn(mark->Copy());
+    m_activateUserMarkFn(mark->Copy(), isLong);
     m2::PointD pt = mark->GetPivot();
     df::SelectionShape::ESelectedObject object = df::SelectionShape::OBJECT_USER_MARK;
     UserMark::Type type = mark->GetMarkType();
@@ -1733,7 +1733,7 @@ void Framework::ActivateUserMark(UserMark const * mark, bool needAnim)
   }
   else
   {
-    m_activateUserMarkFn(nullptr);
+    m_activateUserMarkFn(nullptr, isLong);
     CallDrapeFunction(bind(&df::DrapeEngine::DeselectObject, _1));
   }
 }
@@ -1782,7 +1782,7 @@ void Framework::OnTapEvent(m2::PointD pxPoint, bool isLong, bool isMyPosition, F
     alohalytics::Stats::Instance().LogEvent("$GetUserMark", details);
   }
 
-  ActivateUserMark(mark, true);
+  ActivateUserMark(mark, true, isLong);
 }
 
 void Framework::ResetLastTapEvent()

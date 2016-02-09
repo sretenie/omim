@@ -260,13 +260,13 @@ public:
   BookmarkAndCategory FindBookmark(UserMark const * mark) const;
   BookmarkManager & GetBookmarkManager() { return m_bmManager; }
 
-  void ActivateUserMark(UserMark const * mark, bool needAnim);
+  void ActivateUserMark(UserMark const * mark, bool needAnim, bool isLong = false);
   void DeactivateUserMark();
   bool HasActiveUserMark();
   void InvalidateUserMarks();
   PoiMarkPoint * GetAddressMark(m2::PointD const & globalPoint) const;
 
-  using TActivateCallbackFn = function<void (unique_ptr<UserMarkCopy> mark)>;
+  using TActivateCallbackFn = function<void (unique_ptr<UserMarkCopy> mark, bool isLong)>;
   void SetUserMarkActivationListener(TActivateCallbackFn const & fn) { m_activateUserMarkFn = fn; }
 
   void ResetLastTapEvent();
