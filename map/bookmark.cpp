@@ -310,9 +310,11 @@ void BookmarkCategory::ClusterMarks(long pixelDistance, unsigned int clusterSize
   }
 
   vector<Bookmark*> marks;
+  RequestController();
   marks.reserve(m_Bookmarks.size());
   for (auto itr = m_Bookmarks.begin(); itr != m_Bookmarks.end(); itr++)
     marks.push_back(itr->get());
+  ReleaseController();
 
   unsigned int moreThan = clusterSize;
   if(moreThan > 0) moreThan -= 1;
