@@ -102,6 +102,16 @@ public:
   void SetTapEventInfoListener(TTapEventInfoFn const & fn);
   using TUserPositionChangedFn = FrontendRenderer::TUserPositionChangedFn;
   void SetUserPositionListener(TUserPositionChangedFn const & fn);
+  using TScaleStartedFn = FrontendRenderer::TScaleStartedFn;
+  void SetScaleStartedListener(TScaleStartedFn const & fn);
+  using TScaleEndedFn = FrontendRenderer::TScaleEndedFn;
+  void SetScaleEndedListener(TScaleEndedFn const & fn);
+  using TDragStartedFn = FrontendRenderer::TDragStartedFn;
+  void SetDragStartedListener(TDragStartedFn const & fn);
+  using TDragEndedFn = FrontendRenderer::TDragEndedFn;
+  void SetDragEndedListener(TDragEndedFn const & fn);
+  using TRotatedFn = FrontendRenderer::TRotatedFn;
+  void SetRotatedListener(TRotatedFn const & fn);
 
   FeatureID GetVisiblePOI(m2::PointD const & glbPoint);
   void SelectObject(SelectionShape::ESelectedObject obj, m2::PointD const & pt, bool isAnim);
@@ -133,6 +143,11 @@ private:
   void MyPositionModeChanged(location::EMyPositionMode mode);
   void TapEvent(m2::PointD const & pxPoint, bool isLong, bool isMyPosition, FeatureID const & feature);
   void UserPositionChanged(m2::PointD const & position);
+  void ScaleStartEvent();
+  void ScaleEndedEvent();
+  void DragStartEvent();
+  void DragEndedEvent(m2::PointD const & pt);
+  void RotatedEvent();
 
   void ResizeImpl(int w, int h);
 
@@ -151,6 +166,11 @@ private:
   location::TMyPositionModeChanged m_myPositionModeChanged;
   TTapEventInfoFn m_tapListener;
   TUserPositionChangedFn m_userPositionChangedFn;
+  TScaleStartedFn m_scaleStartedListener;
+  TScaleEndedFn m_scaleEndedListener;
+  TDragStartedFn m_dragStartedListener;
+  TDragEndedFn m_dragEndedListener;
+  TRotatedFn m_rotatedListener;
 
   gui::TWidgetsInitInfo m_widgetsInfo;
   gui::TWidgetsSizeInfo m_widgetSizes;

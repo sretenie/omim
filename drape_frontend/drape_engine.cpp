@@ -62,7 +62,12 @@ DrapeEngine::DrapeEngine(Params && params)
                                     bind(&DrapeEngine::TapEvent, this, _1, _2, _3, _4),
                                     bind(&DrapeEngine::UserPositionChanged, this, _1),
                                     bind(&DrapeEngine::MyPositionModeChanged, this, _1),
-                                    mode, make_ref(m_requestedTiles), params.m_allow3dBuildings);
+                                    mode, make_ref(m_requestedTiles), params.m_allow3dBuildings,
+                                    bind(&DrapeEngine::ScaleStartEvent, this),
+                                    bind(&DrapeEngine::ScaleEndedEvent, this),
+                                    bind(&DrapeEngine::DragStartEvent, this),
+                                    bind(&DrapeEngine::DragEndedEvent, this, _1),
+                                    bind(&DrapeEngine::RotatedEvent, this));
 
   m_frontend = make_unique_dp<FrontendRenderer>(frParams);
 
@@ -253,6 +258,51 @@ void DrapeEngine::UserPositionChanged(m2::PointD const & position)
   });
 }
 
+void DrapeEngine::ScaleStartEvent()
+{
+  GetPlatform().RunOnGuiThread([=]()
+  {
+    if (m_scaleStartedListener)
+      m_scaleStartedListener();
+  });
+}
+
+void DrapeEngine::ScaleEndedEvent()
+{
+  GetPlatform().RunOnGuiThread([=]()
+  {
+    if (m_scaleEndedListener)
+      m_scaleEndedListener();
+  });
+}
+
+void DrapeEngine::DragStartEvent()
+{
+  GetPlatform().RunOnGuiThread([=]()
+  {
+    if (m_dragStartedListener)
+      m_dragStartedListener();
+  });
+}
+
+void DrapeEngine::DragEndedEvent(m2::PointD const & pt)
+{
+  GetPlatform().RunOnGuiThread([this, pt]()
+  {
+    if (m_dragEndedListener)
+      m_dragEndedListener(pt);
+  });
+}
+
+void DrapeEngine::RotatedEvent()
+{
+  GetPlatform().RunOnGuiThread([=]()
+  {
+    if (m_rotatedListener)
+      m_rotatedListener();
+  });
+}
+
 void DrapeEngine::ResizeImpl(int w, int h)
 {
   gui::DrapeGui::Instance().SetSurfaceSize(m2::PointF(w, h));
@@ -337,6 +387,31 @@ void DrapeEngine::SetTapEventInfoListener(TTapEventInfoFn const & fn)
 void DrapeEngine::SetUserPositionListener(DrapeEngine::TUserPositionChangedFn const & fn)
 {
   m_userPositionChangedFn = fn;
+}
+
+void DrapeEngine::SetScaleStartedListener(TScaleStartedFn const & fn)
+{
+  m_scaleStartedListener = fn;
+}
+
+void DrapeEngine::SetScaleEndedListener(TScaleEndedFn const & fn)
+{
+  m_scaleEndedListener = fn;
+}
+
+void DrapeEngine::SetDragStartedListener(TDragStartedFn const & fn)
+{
+  m_dragStartedListener = fn;
+}
+
+void DrapeEngine::SetDragEndedListener(TDragEndedFn const & fn)
+{
+  m_dragEndedListener = fn;
+}
+
+void DrapeEngine::SetRotatedListener(TRotatedFn const & fn)
+{
+  m_rotatedListener = fn;
 }
 
 FeatureID DrapeEngine::GetVisiblePOI(m2::PointD const & glbPoint)

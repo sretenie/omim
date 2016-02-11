@@ -68,6 +68,11 @@ public:
   using TIsCountryLoaded = TIsCountryLoaded;
   using TTapEventInfoFn = function<void (m2::PointD const & pxPoint, bool isLong, bool isMyPosition, FeatureID const & id)>;
   using TUserPositionChangedFn = function<void (m2::PointD const & pt)>;
+  using TScaleStartedFn = function<void ()>;
+  using TScaleEndedFn = function<void ()>;
+  using TDragStartedFn = function<void ()>;
+  using TDragEndedFn = function<void (m2::PointD const & pt)>;
+  using TRotatedFn = function<void ()>;
 
   struct Params : BaseRenderer::Params
   {
@@ -82,7 +87,12 @@ public:
            location::TMyPositionModeChanged myPositionModeCallback,
            location::EMyPositionMode initMode,
            ref_ptr<RequestedTiles> requestedTiles,
-           bool allow3dBuildings)
+           bool allow3dBuildings,
+           TScaleStartedFn scaleStartedFn,
+           TScaleEndedFn scaleEndedFn,
+           TDragStartedFn dragStartedFn,
+           TDragEndedFn dragEndedFn,
+           TRotatedFn rotatedFn)
       : BaseRenderer::Params(commutator, factory, texMng)
       , m_viewport(viewport)
       , m_modelViewChangedFn(modelViewChangedFn)
@@ -93,6 +103,11 @@ public:
       , m_initMyPositionMode(initMode)
       , m_requestedTiles(requestedTiles)
       , m_allow3dBuildings(allow3dBuildings)
+      , m_scaleStartedFn(scaleStartedFn)
+      , m_scaleEndedFn(scaleEndedFn)
+      , m_dragStartedFn(dragStartedFn)
+      , m_dragEndedFn(dragEndedFn)
+      , m_rotatedFn(rotatedFn)
     {}
 
     Viewport m_viewport;
@@ -104,6 +119,11 @@ public:
     location::EMyPositionMode m_initMyPositionMode;
     ref_ptr<RequestedTiles> m_requestedTiles;
     bool m_allow3dBuildings;
+    TScaleStartedFn m_scaleStartedFn;
+    TScaleEndedFn m_scaleEndedFn;
+    TDragStartedFn m_dragStartedFn;
+    TDragEndedFn m_dragEndedFn;
+    TRotatedFn m_rotatedFn;
   };
 
   FrontendRenderer(Params const & params);
@@ -256,6 +276,11 @@ private:
   TModelViewChanged m_modelViewChangedFn;
   TTapEventInfoFn m_tapEventInfoFn;
   TUserPositionChangedFn m_userPositionChangedFn;
+  TScaleStartedFn m_scaleStartedFn;
+  TScaleEndedFn m_scaleEndedFn;
+  TDragStartedFn m_dragStartedFn;
+  TDragEndedFn m_dragEndedFn;
+  TRotatedFn m_rotatedFn;
 
   unique_ptr<TileTree> m_tileTree;
   int m_currentZoomLevel = -1;

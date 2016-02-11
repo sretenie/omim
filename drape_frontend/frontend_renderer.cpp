@@ -79,6 +79,11 @@ FrontendRenderer::FrontendRenderer(Params const & params)
   , m_tileTree(new TileTree())
   , m_requestedTiles(params.m_requestedTiles)
   , m_maxGeneration(0)
+  , m_scaleStartedFn(params.m_scaleStartedFn)
+  , m_scaleEndedFn(params.m_scaleEndedFn)
+  , m_dragStartedFn(params.m_dragStartedFn)
+  , m_dragEndedFn(params.m_dragEndedFn)
+  , m_rotatedFn(params.m_rotatedFn)
 {
 #ifdef DRAW_INFO
   m_tpf = 0.0;
@@ -1222,21 +1227,25 @@ bool FrontendRenderer::OnSingleTouchFiltrate(m2::PointD const & pt, TouchEvent::
 void FrontendRenderer::OnDragStarted()
 {
   m_myPositionController->DragStarted();
+  m_dragStartedFn();
 }
 
 void FrontendRenderer::OnDragEnded(m2::PointD const & distance)
 {
   m_myPositionController->DragEnded(distance);
+  m_dragEndedFn(distance);
 }
 
 void FrontendRenderer::OnScaleStarted()
 {
   m_myPositionController->ScaleStarted();
+  m_scaleStartedFn();
 }
 
 void FrontendRenderer::OnRotated()
 {
   m_myPositionController->Rotated();
+  m_rotatedFn();
 }
 
 void FrontendRenderer::CorrectScalePoint(m2::PointD & pt) const
@@ -1257,6 +1266,7 @@ void FrontendRenderer::CorrectScalePoint(m2::PointD & pt1, m2::PointD & pt2) con
 void FrontendRenderer::OnScaleEnded()
 {
   m_myPositionController->ScaleEnded();
+  m_scaleEndedFn();
 }
 
 void FrontendRenderer::OnAnimationStarted(ref_ptr<BaseModelViewAnimation> anim)
