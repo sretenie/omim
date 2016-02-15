@@ -78,6 +78,13 @@ public:
   int const & GetUid() const { return m_uid; }
   void SetUid(int const & uid) { m_uid = uid; }
 
+  size_t GetGroupItemsCount() const { return m_groupUids.size(); }
+  int const & GetGroupItem(size_t index) const { return m_groupUids[index]; }
+  void SetGroupItems(const vector<int> & items)
+  {
+    m_groupUids = vector<int>(items.cbegin(), items.cend());
+  }
+
 private:
   string m_name;
   string m_description;
@@ -88,6 +95,7 @@ private:
   bool m_isGroup;
   m2::RectD m_bounds;
   int m_uid;
+  vector<int> m_groupUids;
 };
 
 class Bookmark : public UserMark
@@ -119,6 +127,8 @@ public:
   bool const & IsGroup() const { return m_data.IsGroup(); }
   m2::RectD const & GetGroupBounds() const { return m_data.GetGroupBounds(); }
   int const & GetUid() const { return m_data.GetUid(); }
+  size_t GetGroupItemsCount() const { return m_data.GetGroupItemsCount(); }
+  int const & GetGroupItem(size_t index) const { return m_data.GetGroupItem(index); }
 
   string const & GetName() const;
   void SetName(string const & name);
@@ -207,7 +217,7 @@ public:
   /// creates unique file name on first save and uses it every time.
   bool SaveToKMLFile();
 
-  void ClusterMarks(long pixelDistance, unsigned int clusterSize = 0, int minZoom = 6, int maxZoom = 16);
+  void ClusterMarks(long pixelDistance, unsigned int clusterSize = 0, int minZoom = 6, int maxZoom = 19);
 
   Bookmark const * GetBookmark(size_t index) const;
   pair<int, Bookmark const *> GetBookmarkByUid(int const & uid) const;

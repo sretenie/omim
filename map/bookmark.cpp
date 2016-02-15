@@ -293,6 +293,29 @@ struct ClasterData
   m2::PointD point;
 };
 
+string GetClusterIcon(unsigned int count)
+{
+  if (count <= 10)
+    return std::to_string(count);
+
+  if (count <= 20)
+    return "10+";
+  if (count <= 30)
+    return "20+";
+  if (count <= 40)
+    return "30+";
+  if (count <= 50)
+    return "40+";
+  if (count <= 100)
+    return "50+";
+  if (count <= 500)
+    return "100+";
+  if (count <= 1000)
+    return "500+";
+
+  return "1000+";
+}
+
 void BookmarkCategory::ClusterMarks(long pixelDistance, unsigned int clusterSize, int minZoom, int maxZoom)
 {
   int zoom = m_framework.GetDrawScale();
@@ -362,9 +385,12 @@ void BookmarkCategory::ClusterMarks(long pixelDistance, unsigned int clusterSize
 
     if (cluster > moreThan)
     {
+      vector<int> ids;
       for (unsigned int k = 0; k < cluterFindedIndex.size(); k++)
       {
-        marks.erase(marks.begin() + (cluterFindedIndex.at(k) - k));
+        int index = cluterFindedIndex.at(k) - k;
+        ids.push_back(marks[index]->GetUid());
+        marks.erase(marks.begin() + index);
       }
       double extends = minPoint.Length(maxPoint) * 0.05;
       m2::PointD extendPoint(extends, extends);
@@ -372,10 +398,11 @@ void BookmarkCategory::ClusterMarks(long pixelDistance, unsigned int clusterSize
       maxPoint += extendPoint;
       ClasterData data;
       data.size = cluster + 1;
-      data.data = BookmarkData("group", "placemark-red");
+      data.data = BookmarkData("group", GetClusterIcon(cluster));
       data.data.SetText(std::to_string(data.size));
       data.data.SetIsGroup(true);
       data.data.SetGroupBounds(m2::RectD(minPoint, maxPoint));
+      data.data.SetGroupItems(ids);
       data.point = clusterPoint;
       clustered.push_back(data);
     }

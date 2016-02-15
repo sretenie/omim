@@ -6,7 +6,9 @@ namespace
 {
 char const * kSupportedColors[] = {"placemark-red",    "placemark-blue",  "placemark-purple",
                                    "placemark-yellow", "placemark-pink",  "placemark-brown",
-                                   "placemark-green",  "placemark-orange"};
+                                   "placemark-green",  "placemark-orange",
+                                   "3", "4", "5", "6", "7", "8", "9", "10", "10+", "20+",
+                                   "30+", "40+", "50+", "100+", "500+", "1000+"};
 }
 
 namespace style
