@@ -187,7 +187,7 @@ bool UserMarkContainer::IsDrawable() const
 UserMark * UserMarkContainer::CreateUserMark(m2::PointD const & ptOrg)
 {
   // Push front an user mark.
-  SetDirty();
+//  SetDirty();
   m_userMarks.push_front(unique_ptr<UserMark>(AllocateUserMark(ptOrg)));
   return m_userMarks.front().get();
 }
@@ -217,7 +217,7 @@ UserMark * UserMarkContainer::GetUserMarkForEdit(size_t index)
 
 void UserMarkContainer::Clear(size_t skipCount/* = 0*/)
 {
-  SetDirty();
+//  SetDirty();
   if (skipCount < m_userMarks.size())
     m_userMarks.erase(m_userMarks.begin(), m_userMarks.end() - skipCount);
 }

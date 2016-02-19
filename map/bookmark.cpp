@@ -889,7 +889,7 @@ string BookmarkCategory::GenerateUniqueFileName(const string & path, string name
 
 UserMark * BookmarkCategory::AllocateUserMark(m2::PointD const & ptOrg)
 {
-  return new Bookmark(ptOrg, this);
+  return new Bookmark(ptOrg, this, false);
 }
 
 bool BookmarkCategory::SaveToKMLFile()
