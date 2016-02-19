@@ -35,18 +35,12 @@ public:
   BookmarkData(string const & name, string const & type,
                      string const & description = "", double scale = -1.0,
                      time_t timeStamp = my::INVALID_TIME_STAMP,
-                     string const & text = "",
-                     bool isGroup = false,
-                     m2::RectD bounds = m2::RectD(),
                      const int & uid = -1)
     : m_name(name)
     , m_description(description)
     , m_type(type)
     , m_scale(scale)
     , m_timeStamp(timeStamp)
-    , m_text(text)
-    , m_isGroup(isGroup)
-    , m_bounds(bounds)
     , m_uid(uid)
   {
   }
@@ -66,24 +60,8 @@ public:
   time_t const & GetTimeStamp() const { return m_timeStamp; }
   void SetTimeStamp(const time_t & timeStamp) { m_timeStamp = timeStamp; }
 
-  string const & GetText() const { return m_text; }
-  void SetText(string const & text) { m_text = text; }
-
-  bool const & IsGroup() const { return m_isGroup; }
-  void SetIsGroup(bool const & group) { m_isGroup = group; }
-
-  m2::RectD const & GetGroupBounds() const { return m_bounds; }
-  void SetGroupBounds(m2::RectD const & bounds) { m_bounds = bounds; }
-
   int const & GetUid() const { return m_uid; }
   void SetUid(int const & uid) { m_uid = uid; }
-
-  size_t GetGroupItemsCount() const { return m_groupUids.size(); }
-  int const & GetGroupItem(size_t index) const { return m_groupUids[index]; }
-  void SetGroupItems(const vector<int> & items)
-  {
-    m_groupUids = vector<int>(items.cbegin(), items.cend());
-  }
 
 private:
   string m_name;
@@ -91,11 +69,7 @@ private:
   string m_type;  ///< Now it stores bookmark color (category style).
   double m_scale; ///< Viewport scale. -1.0 - is a default value (no scale set).
   time_t m_timeStamp;
-  string m_text;
-  bool m_isGroup;
-  m2::RectD m_bounds;
   int m_uid;
-  vector<int> m_groupUids;
 };
 
 class Bookmark : public UserMark
@@ -123,12 +97,7 @@ public:
   void FillLogEvent(TEventContainer & details) const override;
   bool RunCreationAnim() const override;
 
-  string const & GetText() const override { return m_data.GetText(); }
-  bool const & IsGroup() const { return m_data.IsGroup(); }
-  m2::RectD const & GetGroupBounds() const { return m_data.GetGroupBounds(); }
   int const & GetUid() const { return m_data.GetUid(); }
-  size_t GetGroupItemsCount() const { return m_data.GetGroupItemsCount(); }
-  int const & GetGroupItem(size_t index) const { return m_data.GetGroupItem(index); }
 
   string const & GetName() const;
   void SetName(string const & name);
@@ -158,7 +127,6 @@ class BookmarkCategory : public UserMarkContainer
 {
   typedef UserMarkContainer TBase;
   vector<unique_ptr<Track>> m_tracks;
-  deque<unique_ptr<Bookmark>> m_Bookmarks;
 
   string m_name;
   /// Stores file name from which category was loaded
@@ -217,8 +185,6 @@ public:
   /// creates unique file name on first save and uses it every time.
   bool SaveToKMLFile();
 
-  void ClusterMarks(long pixelDistance, unsigned int clusterSize = 0, int minZoom = 6, int maxZoom = 19);
-
   Bookmark const * GetBookmark(size_t index) const;
   pair<int, Bookmark const *> GetBookmarkByUid(int const & uid) const;
 
@@ -237,8 +203,6 @@ public:
 
 protected:
   UserMark * AllocateUserMark(m2::PointD const & ptOrg) override;
-  UserMark * CreateUserMark(m2::PointD const & ptOrg) override;
-  void DeleteUserMark(size_t index) override;
 };
 
 /// <category index, bookmark index>
