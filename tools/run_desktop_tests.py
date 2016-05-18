@@ -25,6 +25,7 @@ import random
 import socket
 import subprocess
 import testserver
+import time
 import urllib2
 
 import logging
@@ -62,6 +63,8 @@ class TestRunner:
         parser.add_option("-i", "--include", dest="runlist", action="append", default=[], help="Include test into execution, comma separated list with no spaces or individual tests, or both. E.g.: -i one -i two -i three,four,five")
         parser.add_option("-e", "--exclude", dest="skiplist", action="append", default=[], help="Exclude test from execution, comma separated list with no spaces or individual tests, or both. E.g.: -i one -i two -i three,four,five")
         parser.add_option("-b", "--boost_tests", dest="boost_tests", action="store_true", default=False, help="Treat all the tests as boost tests (their output is different and it must be processed differently).")
+        parser.add_option("-k", "--keep_alive", dest="keep_alive", action="store_true", default=False, help="Keep the server alive after the end of the test. Because the server sometimes fails to start, this reduces the probability of false test failures on CI servers.")
+
 
         (options, args) = parser.parse_args()
 
@@ -83,15 +86,20 @@ class TestRunner:
         self.workspace_path = options.folder
         self.logfile = options.output
         self.data_path = (" --data_path={0}".format(options.data_path) if options.data_path else "")
-        self.user_resource_path = (" --user_resource_path={0}".format(options.resource_path) if options.resource_path else "") 
+        self.user_resource_path = (" --user_resource_path={0}".format(options.resource_path) if options.resource_path else "")
+
+        self.keep_alive = options.keep_alive
         
 
     def start_server(self):
         server = testserver.TestServer()
         server.start_serving()
+        time.sleep(3)
 
 
     def stop_server(self):
+        if self.keep_alive:
+            return
         try:
             urllib2.urlopen('http://localhost:{port}/kill'.format(port=PORT), timeout=5)
         except (urllib2.URLError, socket.timeout):

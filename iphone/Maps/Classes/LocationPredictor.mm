@@ -36,10 +36,10 @@ namespace
   return self;
 }
 
--(void)setMode:(location::EMyPositionMode) mode
+-(void)setMode:(location::EMyPositionMode)mode
 {
-  m_generatePredictions = (mode == location::MODE_ROTATE_AND_FOLLOW);
-  if (mode < location::MODE_NOT_FOLLOW)
+  m_generatePredictions = (mode == location::FollowAndRotate);
+  if (mode == location::PendingPosition || mode == location::NotFollowNoPosition)
     m_gpsInfoIsValid = false;
 
   [self resetTimer];

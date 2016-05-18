@@ -2,8 +2,11 @@
 
 #include "types_helper.hpp"
 
+#include "platform/platform.hpp"
+
 #include "generator/osm_element.hpp"
 #include "generator/osm2type.hpp"
+#include "generator/tag_admixer.hpp"
 
 #include "routing/car_model.hpp"
 
@@ -236,6 +239,9 @@ UNIT_TEST(OsmType_Synonyms)
     OsmElement e;
     FillXmlElement(arr, ARRAY_SIZE(arr), &e);
 
+    TagReplacer tagReplacer(GetPlatform().ResourcesDir() + REPLACED_TAGS_FILE);
+    tagReplacer(&e);
+    
     FeatureParams params;
     ftype::GetNameAndType(&e, params);
 
@@ -328,7 +334,7 @@ UNIT_TEST(OsmType_Capital)
   {
     char const * arr[][2] = {
       { "place", "city" },
-      { "admin_level", "6" },
+      { "admin_level", "4" },
       { "boundary", "administrative" },
       { "capital", "2" },
       { "place", "city" },
@@ -342,7 +348,7 @@ UNIT_TEST(OsmType_Capital)
 
     TEST_EQUAL(params.m_Types.size(), 2, (params));
     TEST(params.IsTypeExist(GetType({"place", "city", "capital", "2"})), ());
-    TEST(params.IsTypeExist(GetType({"boundary", "administrative", "6"})), ());
+    TEST(params.IsTypeExist(GetType({"boundary", "administrative", "4"})), ());
   }
 }
 
@@ -571,7 +577,7 @@ UNIT_TEST(OsmType_Ferry)
 UNIT_TEST(OsmType_Boundary)
 {
   char const * arr[][2] = {
-    { "admin_level", "6" },
+    { "admin_level", "4" },
     { "boundary", "administrative" },
     { "admin_level", "2" },
     { "boundary", "administrative" },
@@ -585,7 +591,7 @@ UNIT_TEST(OsmType_Boundary)
 
   TEST_EQUAL(params.m_Types.size(), 2, (params));
   TEST(params.IsTypeExist(GetType({"boundary", "administrative", "2"})), ());
-  TEST(params.IsTypeExist(GetType({"boundary", "administrative", "6"})), ());
+  TEST(params.IsTypeExist(GetType({"boundary", "administrative", "4"})), ());
 }
 
 UNIT_TEST(OsmType_Dibrugarh)
@@ -611,7 +617,7 @@ UNIT_TEST(OsmType_Dibrugarh)
   TEST_EQUAL(params.m_Types.size(), 1, (params));
   TEST(params.IsTypeExist(GetType({"place", "city"})), (params));
   string name;
-  TEST(params.name.GetString(StringUtf8Multilang::DEFAULT_CODE, name), (params));
+  TEST(params.name.GetString(StringUtf8Multilang::kDefaultCode, name), (params));
   TEST_EQUAL(name, "Dibrugarh", (params));
 }
 
@@ -763,11 +769,51 @@ UNIT_TEST(OsmType_Entrance)
     OsmElement e;
     FillXmlElement(arr, ARRAY_SIZE(arr), &e);
 
+    TagReplacer tagReplacer(GetPlatform().ResourcesDir() + REPLACED_TAGS_FILE);
+    tagReplacer(&e);
+
     FeatureParams params;
     ftype::GetNameAndType(&e, params);
 
     TEST_EQUAL(params.m_Types.size(), 2, (params));
     TEST(params.IsTypeExist(GetType({"entrance"})), (params));
     TEST(params.IsTypeExist(GetType({"barrier", "entrance"})), (params));
+  }
+}
+
+UNIT_TEST(OsmType_Moscow)
+{
+  {
+    char const * arr[][2] = {
+      { "addr:country", "RU" },
+      { "addr:region", "Москва" },
+      { "admin_level", "2" },
+      { "alt_name:vi", "Mạc Tư Khoa" },
+      { "capital", "yes" },
+      { "ele", "156" },
+      { "int_name", "Moscow" },
+      { "is_capital", "country" },
+      { "ISO3166-2", "RU-MOW" },
+      { "name", "Москва" },
+      { "note", "эта точка должна быть здесь, в историческом центре Москвы" },
+      { "official_status", "ru:город" },
+      { "okato:user", "none" },
+      { "place", "city" },
+      { "population", "12108257" },
+      { "population:date", "2014-01-01" },
+      { "rank", "0" },
+      { "wikipedia", "ru:Москва" },
+    };
+
+    OsmElement e;
+    FillXmlElement(arr, ARRAY_SIZE(arr), &e);
+
+    FeatureParams params;
+    ftype::GetNameAndType(&e, params);
+
+    TEST_EQUAL(params.m_Types.size(), 1, (params));
+    TEST(params.IsTypeExist(GetType({"place", "city", "capital", "2"})), (params));
+    TEST(170 <= params.rank && params.rank <= 180, (params));
+    TEST(!params.name.IsEmpty(), (params));
   }
 }

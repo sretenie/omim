@@ -1,4 +1,5 @@
 #import "MapsAppDelegate.h"
+#import "MapViewController.h"
 #import "MWMBasePlacePageView.h"
 #import "MWMBookmarkColorViewController.h"
 #import "MWMBookmarkDescriptionViewController.h"
@@ -35,15 +36,18 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
                                       options:NSKeyValueObservingOptionNew
                                       context:nullptr];
     }
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(keyboardWillShow:)
-                                                 name:UIKeyboardWillShowNotification
-                                               object:nil];
+    dispatch_async(dispatch_get_main_queue(), ^
+    {
+      [[NSNotificationCenter defaultCenter] addObserver:self
+                                               selector:@selector(keyboardWillShow:)
+                                                   name:UIKeyboardWillShowNotification
+                                                 object:nil];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(keyboardWillHide)
-                                                 name:UIKeyboardWillHideNotification
-                                               object:nil];
+      [[NSNotificationCenter defaultCenter] addObserver:self
+                                               selector:@selector(keyboardWillHide)
+                                                   name:UIKeyboardWillHideNotification
+                                                 object:nil];
+    });
   }
   return self;
 }
@@ -119,14 +123,29 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 
 - (void)addBookmark
 {
-  [self.basePlacePageView addBookmark];
   [self.manager addBookmark];
+  [self.basePlacePageView addBookmark];
 }
 
 - (void)removeBookmark
 {
-  [self.basePlacePageView removeBookmark];
   [self.manager removeBookmark];
+  [self.basePlacePageView removeBookmark];
+}
+
+- (void)editPlace
+{
+  [self.manager editPlace];
+}
+
+- (void)addBusiness
+{
+  [self.manager addBusiness];
+}
+
+- (void)addPlace
+{
+  [self.manager addPlace];
 }
 
 - (void)share
@@ -158,7 +177,7 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 
 - (void)setDistance:(NSString *)distance
 {
-  self.basePlacePageView.distanceLabel.text = distance;
+  self.basePlacePageView.distance = distance;
 }
 
 - (void)updateMyPositionStatus:(NSString *)status
@@ -169,8 +188,9 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 - (void)changeBookmarkCategory
 {
   MWMPlacePageViewManager * manager = self.manager;
+  MapViewController * ovc = static_cast<MapViewController *>(manager.ownerViewController);
   SelectSetVC * vc = [[SelectSetVC alloc] initWithPlacePageManager:manager];
-  [manager.ownerViewController.navigationController pushViewController:vc animated:YES];
+  [ovc.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)changeBookmarkColor
@@ -182,8 +202,10 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 
 - (void)changeBookmarkDescription
 {
-  MWMBookmarkDescriptionViewController * viewController = [[MWMBookmarkDescriptionViewController alloc] initWithPlacePageManager:self.manager];
-  [self.manager.ownerViewController.navigationController pushViewController:viewController animated:YES];
+  MWMPlacePageViewManager * manager = self.manager;
+  MapViewController * ovc = static_cast<MapViewController *>(manager.ownerViewController);
+  MWMBookmarkDescriptionViewController * viewController = [[MWMBookmarkDescriptionViewController alloc] initWithPlacePageManager:manager];
+  [ovc.navigationController pushViewController:viewController animated:YES];
 }
 
 - (void)reloadBookmark
@@ -193,8 +215,8 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 
 - (void)willStartEditingBookmarkTitle
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatPlacePage, kStatRename)];
-// This method should be ovverriden.
+  [Statistics logEvent:kStatEventName(kStatPlacePage, kStatRename)];
+// This method should be оverridden.
 }
 
 - (void)willFinishEditingBookmarkTitle:(NSString *)title
@@ -205,12 +227,17 @@ static NSString * const kPlacePageViewCenterKeyPath = @"center";
 
 - (IBAction)didTap:(UITapGestureRecognizer *)sender
 {
-// This method should be ovverriden if you want to process custom tap.
+// This method should be оverridden if you want to process custom tap.
 }
 
 - (IBAction)didPan:(UIPanGestureRecognizer *)sender
 {
-  // This method should be ovverriden if you want to process custom pan.
+  // This method should be оverridden if you want to process custom pan.
+}
+
+- (void)refresh
+{
+  // This method should be оverridden.
 }
 
 #pragma mark - Properties

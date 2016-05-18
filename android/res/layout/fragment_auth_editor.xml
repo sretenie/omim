@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:orientation="vertical">
+
+  <android.support.v7.widget.Toolbar
+    android:id="@+id/toolbar"
+    style="@style/MwmWidget.ToolbarStyle"
+    android:layout_width="match_parent"
+    android:layout_height="?attr/actionBarSize"
+    android:background="?colorPrimary"
+    android:gravity="end|center_vertical"
+    android:theme="@style/MwmWidget.ToolbarTheme"
+    tools:ignore="UnusedAttribute">
+
+    <ImageView
+      android:id="@+id/logout"
+      android:layout_width="?actionBarSize"
+      android:layout_height="?actionBarSize"
+      android:layout_gravity="end|center_vertical"
+      android:background="?selectableItemBackgroundBorderless"
+      android:scaleType="center"
+      android:src="@drawable/ic_logout"
+      android:visibility="gone"/>
+
+  </android.support.v7.widget.Toolbar>
+
+  <ScrollView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?colorPrimary"
+    android:fillViewport="true"
+    tools:ignore="DuplicateIds">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical"
+      android:padding="@dimen/margin_half_plus"
+      android:clipToPadding="false"
+      android:clipChildren="false"
+      tools:ignore="ScrollViewSize">
+
+      <LinearLayout
+        android:id="@+id/block_edits"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="visible">
+
+        <include
+          android:id="@+id/local_edits"
+          layout="@layout/item_osm_edits"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginBottom="@dimen/margin_half"/>
+
+        <include
+          android:id="@+id/sent_edits"
+          layout="@layout/item_osm_edits"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginBottom="@dimen/margin_half"/>
+
+      </LinearLayout>
+
+      <LinearLayout
+        android:id="@+id/block_auth"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:clipToPadding="false"
+        android:clipChildren="false">
+
+        <TextView
+          android:id="@+id/first_osm_edit"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginBottom="20dp"
+          android:text="@string/login_to_make_edits_visible"
+          android:textAppearance="@style/MwmTextAppearance.Body3.Light"
+          android:textColor="@color/text_light"/>
+
+        <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="horizontal"
+          android:clipToPadding="false"
+          android:clipChildren="false"
+          tools:ignore="ButtonStyle">
+
+          <Button
+            android:id="@+id/login_google"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/editor_auth_btn_height"
+            android:layout_marginBottom="@dimen/margin_half_plus"
+            android:layout_marginEnd="@dimen/margin_half_plus"
+            android:layout_marginRight="@dimen/margin_half_plus"
+            android:layout_weight="1"
+            android:background="@drawable/button_editor_light"
+            android:drawableLeft="@drawable/ic_login_google"
+            android:drawableStart="@drawable/ic_login_google"
+            android:fontFamily="@string/robotoMedium"
+            android:paddingEnd="@dimen/margin_half"
+            android:paddingLeft="@dimen/margin_half"
+            android:paddingRight="@dimen/margin_half"
+            android:paddingStart="@dimen/margin_half"
+            android:text="@string/google"
+            android:textAppearance="@style/MwmTextAppearance.Body1"
+            android:textColor="@color/text_dark"
+            tools:targetApi="jelly_bean"/>
+
+          <Button
+            android:id="@+id/login_facebook"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/editor_auth_btn_height"
+            android:layout_marginBottom="@dimen/margin_half_plus"
+            android:layout_weight="1"
+            android:background="@drawable/com_facebook_button_background"
+            android:drawableLeft="@drawable/ic_login_fb"
+            android:drawableStart="@drawable/ic_login_fb"
+            android:fontFamily="@string/robotoMedium"
+            android:paddingEnd="@dimen/margin_half"
+            android:paddingLeft="@dimen/margin_half"
+            android:paddingRight="@dimen/margin_half"
+            android:paddingStart="@dimen/margin_half"
+            android:text="@string/facebook"
+            android:textAppearance="@style/MwmTextAppearance.Body1.Light"
+            android:textColor="@color/text_light"
+            tools:targetApi="jelly_bean"/>
+
+        </LinearLayout>
+
+        <Button
+          android:id="@+id/login_osm"
+          style="@style/MwmWidget.Button.Accent"
+          android:layout_width="match_parent"
+          android:layout_height="@dimen/editor_auth_btn_height"
+          android:fontFamily="@string/robotoMedium"
+          android:text="@string/openstreetmap"
+          android:textAllCaps="false"
+          android:textAppearance="@style/MwmTextAppearance.Body1.Light"
+          tools:targetApi="jelly_bean"/>
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="@dimen/margin_double"
+          android:text="@string/no_osm_account"
+          android:textAppearance="@style/MwmTextAppearance.Body3.Light"
+          android:textColor="@color/text_light"/>
+
+        <TextView
+          android:id="@+id/register"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="@dimen/margin_half"
+          android:background="?clickableBackground"
+          android:padding="@dimen/margin_half"
+          android:text="@string/register_at_openstreetmap"
+          android:textAllCaps="true"
+          android:textAppearance="@style/MwmTextAppearance.Body1.Light"
+          android:textColor="@color/text_light"/>
+
+      </LinearLayout>
+
+    </LinearLayout>
+
+  </ScrollView>
+
+</LinearLayout>

@@ -1,5 +1,6 @@
 #include "drape_frontend/animation/interpolation_holder.hpp"
 #include "drape_frontend/gui/drape_gui.hpp"
+#include "drape_frontend/animation_system.hpp"
 #include "drape_frontend/framebuffer.hpp"
 #include "drape_frontend/frontend_renderer.hpp"
 #include "drape_frontend/message_subclasses.hpp"
@@ -53,8 +54,55 @@ struct MergedGroupKey
   {
     if (!(m_state == other.m_state))
       return m_state < other.m_state;
-
     return m_key.LessStrict(other.m_key);
+  }
+};
+
+template <typename ToDo>
+bool RemoveGroups(ToDo & filter, vector<drape_ptr<RenderGroup>> & groups,
+                  ref_ptr<dp::OverlayTree> tree)
+{
+  size_t startCount = groups.size();
+  size_t count = startCount;
+  size_t current = 0;
+  while (current < count)
+  {
+    drape_ptr<RenderGroup> & group = groups[current];
+    if (filter(group))
+    {
+      group->RemoveOverlay(tree);
+      swap(group, groups.back());
+      groups.pop_back();
+      --count;
+    }
+    else
+    {
+      ++current;
+    }
+  }
+
+  return startCount != count;
+}
+
+struct RemoveTilePredicate
+{
+  mutable bool m_deletionMark = false;
+  function<bool(drape_ptr<RenderGroup> const &)> const & m_predicate;
+
+  RemoveTilePredicate(function<bool(drape_ptr<RenderGroup> const &)> const & predicate)
+    : m_predicate(predicate)
+  {}
+
+  bool operator()(drape_ptr<RenderGroup> const & group) const
+  {
+    if (m_predicate(group))
+    {
+      group->DeleteLater();
+      m_deletionMark = true;
+      return group->CanBeDeleted();
+    }
+
+    return false;
   }
 };
 
@@ -71,12 +119,12 @@ FrontendRenderer::FrontendRenderer(Params const & params)
   , m_enablePerspectiveInNavigation(false)
   , m_enable3dBuildings(params.m_allow3dBuildings)
   , m_isIsometry(false)
+  , m_blockTapEvents(params.m_blockTapEvents)
+  , m_choosePositionMode(false)
   , m_viewport(params.m_viewport)
-  , m_userEventStream(params.m_isCountryLoadedFn)
   , m_modelViewChangedFn(params.m_modelViewChangedFn)
   , m_tapEventInfoFn(params.m_tapEventFn)
   , m_userPositionChangedFn(params.m_positionChangedFn)
-  , m_tileTree(new TileTree())
   , m_requestedTiles(params.m_requestedTiles)
   , m_maxGeneration(0)
 {
@@ -92,7 +140,8 @@ FrontendRenderer::FrontendRenderer(Params const & params)
   ASSERT(m_tapEventInfoFn, ());
   ASSERT(m_userPositionChangedFn, ());
 
-  m_myPositionController.reset(new MyPositionController(params.m_initMyPositionMode));
+  m_myPositionController.reset(new MyPositionController(params.m_initMyPositionMode, params.m_timeInBackground,
+                                                        params.m_firstLaunch, params.m_isRoutingActive));
   m_myPositionController->SetModeListener(params.m_myPositionModeCallback);
 
   StartThread();
@@ -148,6 +197,43 @@ void FrontendRenderer::AfterDrawFrame()
 
 #endif
 
+void FrontendRenderer::UpdateCanBeDeletedStatus()
+{
+  m2::RectD const & screenRect = m_userEventStream.GetCurrentScreen().ClipRect();
+
+  vector<m2::RectD> notFinishedTileRects;
+  notFinishedTileRects.reserve(m_notFinishedTiles.size());
+  for (auto const & tileKey : m_notFinishedTiles)
+    notFinishedTileRects.push_back(tileKey.GetGlobalRect());
+
+  for (RenderLayer & layer : m_layers)
+  {
+    for (auto & group : layer.m_renderGroups)
+    {
+      if (group->IsPendingOnDelete())
+      {
+        bool canBeDeleted = true;
+        if (!notFinishedTileRects.empty())
+        {
+          m2::RectD const tileRect = group->GetTileKey().GetGlobalRect();
+          if (tileRect.IsIntersect(screenRect))
+          {
+            for (auto const & notFinishedRect : notFinishedTileRects)
+            {
+              if (notFinishedRect.IsIntersect(tileRect))
+              {
+                canBeDeleted = false;
+                break;
+              }
+            }
+          }
+        }
+        layer.m_isDirty |= group->UpdateCanBeDeletedStatus(canBeDeleted, m_currentZoomLevel, make_ref(m_overlayTree));
+      }
+    }
+  }
+}
+
 void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
 {
   switch (message->GetType())
@@ -158,33 +244,63 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       dp::GLState const & state = msg->GetState();
       TileKey const & key = msg->GetKey();
       drape_ptr<dp::RenderBucket> bucket = msg->AcceptBuffer();
-      ref_ptr<dp::GpuProgram> program = m_gpuProgramManager->GetProgram(state.GetProgramIndex());
-      ref_ptr<dp::GpuProgram> program3d = m_gpuProgramManager->GetProgram(state.GetProgram3dIndex());
-      bool const isPerspective = m_userEventStream.GetCurrentScreen().isPerspective();
-      if (isPerspective)
-        program3d->Bind();
-      else
-        program->Bind();
-      bucket->GetBuffer()->Build(isPerspective ? program3d : program);
       if (!IsUserMarkLayer(key))
       {
-        if (CheckTileGenerations(key))
-          m_tileTree->ProcessTile(key, GetCurrentZoomLevelForData(), state, move(bucket));
+        if (key.m_zoomLevel == m_currentZoomLevel && CheckTileGenerations(key))
+        {
+          PrepareBucket(state, bucket);
+          AddToRenderGroup(state, move(bucket), key);
+        }
       }
       else
       {
+        PrepareBucket(state, bucket);
+
+        ref_ptr<dp::GpuProgram> program = m_gpuProgramManager->GetProgram(state.GetProgramIndex());
+        ref_ptr<dp::GpuProgram> program3d = m_gpuProgramManager->GetProgram(state.GetProgram3dIndex());
+
         m_userMarkRenderGroups.emplace_back(make_unique_dp<UserMarkRenderGroup>(state, key, move(bucket)));
         m_userMarkRenderGroups.back()->SetRenderParams(program, program3d, make_ref(&m_generalUniforms));
       }
       break;
     }
 
-  case Message::FinishReading:
+  case Message::FlushOverlays:
     {
-      ref_ptr<FinishReadingMessage> msg = message;
+      ref_ptr<FlushOverlaysMessage> msg = message;
+      TOverlaysRenderData renderData = msg->AcceptRenderData();
+      for (auto & overlayRenderData : renderData)
+      {
+        ASSERT(!IsUserMarkLayer(overlayRenderData.m_tileKey), ());
+        if (overlayRenderData.m_tileKey.m_zoomLevel == m_currentZoomLevel &&
+            CheckTileGenerations(overlayRenderData.m_tileKey))
+        {
+          PrepareBucket(overlayRenderData.m_state, overlayRenderData.m_bucket);
+          AddToRenderGroup(overlayRenderData.m_state, move(overlayRenderData.m_bucket), overlayRenderData.m_tileKey);
+        }
+      }
+      break;
+    }
+
+  case Message::FinishTileRead:
+    {
+      ref_ptr<FinishTileReadMessage> msg = message;
+      bool changed = false;
       for (auto const & tileKey : msg->GetTiles())
-        CheckTileGenerations(tileKey);
-      m_tileTree->FinishTiles(msg->GetTiles(), GetCurrentZoomLevelForData());
+      {
+        if (CheckTileGenerations(tileKey))
+        {
+          auto it = m_notFinishedTiles.find(tileKey);
+          if (it != m_notFinishedTiles.end())
+          {
+            m_notFinishedTiles.erase(it);
+            changed = true;
+          }
+        }
+      }
+
+      if (changed)
+        UpdateCanBeDeletedStatus();
       break;
     }
 
@@ -227,10 +343,22 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       ref_ptr<GuiLayerRecachedMessage> msg = message;
       drape_ptr<gui::LayerRenderer> renderer = move(msg->AcceptRenderer());
       renderer->Build(make_ref(m_gpuProgramManager));
+      if (msg->NeedResetOldGui())
+        m_guiRenderer.release();
       if (m_guiRenderer == nullptr)
         m_guiRenderer = move(renderer);
       else
         m_guiRenderer->Merge(make_ref(renderer));
+
+      bool oldMode = m_choosePositionMode;
+      m_choosePositionMode = m_guiRenderer->HasWidget(gui::WIDGET_CHOOSE_POSITION_MARK);
+      if (oldMode != m_choosePositionMode)
+      {
+        ScreenBase const & screen = m_userEventStream.GetCurrentScreen();
+        CheckIsometryMinScale(screen);
+        UpdateDisplacementEnabled();
+        InvalidateRect(screen.ClipRect());
+      }
       break;
     }
 
@@ -241,17 +369,16 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       break;
     }
 
-  case Message::StopRendering:
+  case Message::MapShapes:
     {
-      ProcessStopRenderingMessage();
-      break;
-    }
-
-  case Message::MyPositionShape:
-    {
-      ref_ptr<MyPositionShapeMessage> msg = message;
+      ref_ptr<MapShapesMessage> msg = message;
       m_myPositionController->SetRenderShape(msg->AcceptShape());
       m_selectionShape = msg->AcceptSelection();
+      if (m_selectObjectMessage != nullptr)
+      {
+        ProcessSelection(make_ref(m_selectObjectMessage));
+        m_selectObjectMessage.reset();
+      }
     }
     break;
 
@@ -260,17 +387,14 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       ref_ptr<ChangeMyPositionModeMessage> msg = message;
       switch (msg->GetChangeType())
       {
-      case ChangeMyPositionModeMessage::TYPE_NEXT:
-        m_myPositionController->NextMode(msg->GetPreferredZoomLevel());
+      case ChangeMyPositionModeMessage::SwitchNextMode:
+        m_myPositionController->NextMode(m_userEventStream.GetCurrentScreen());
         break;
-      case ChangeMyPositionModeMessage::TYPE_STOP_FOLLOW:
+      case ChangeMyPositionModeMessage::StopFollowing:
         m_myPositionController->StopLocationFollow();
         break;
-      case ChangeMyPositionModeMessage::TYPE_INVALIDATE:
-        m_myPositionController->Invalidate();
-        break;
-      case ChangeMyPositionModeMessage::TYPE_CANCEL:
-        m_myPositionController->TurnOff();
+      case ChangeMyPositionModeMessage::LoseLocation:
+        m_myPositionController->LoseLocation();
         break;
       default:
         ASSERT(false, ("Unknown change type:", static_cast<int>(msg->GetChangeType())));
@@ -311,26 +435,13 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
   case Message::SelectObject:
     {
       ref_ptr<SelectObjectMessage> msg = message;
-
       if (m_selectionShape == nullptr)
+      {
+        m_selectObjectMessage = make_unique_dp<SelectObjectMessage>(msg->GetSelectedObject(), msg->GetPosition(),
+                                                                    msg->IsAnim());
         break;
-
-      if (msg->IsDismiss())
-      {
-        m_selectionShape->Hide();
       }
-      else
-      {
-        double offsetZ = 0.0;
-        if (m_userEventStream.GetCurrentScreen().isPerspective())
-        {
-          dp::OverlayTree::TSelectResult selectResult;
-          m_overlayTree->Select(msg->GetPosition(), selectResult);
-          for (ref_ptr<dp::OverlayHandle> handle : selectResult)
-            offsetZ = max(offsetZ, handle->GetPivotZ());
-        }
-        m_selectionShape->Show(msg->GetSelectedObject(), msg->GetPosition(), offsetZ, msg->IsAnim());
-      }
+      ProcessSelection(msg);
       break;
     }
 
@@ -365,15 +476,12 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
                                   MessagePriority::High);
       }
 
-      m_myPositionController->ActivateRouting();
-#ifdef OMIM_OS_ANDROID
       if (m_pendingFollowRoute != nullptr)
       {
         FollowRoute(m_pendingFollowRoute->m_preferredZoomLevel, m_pendingFollowRoute->m_preferredZoomLevelIn3d,
                     m_pendingFollowRoute->m_rotationAngle, m_pendingFollowRoute->m_angleFOV);
         m_pendingFollowRoute.reset();
       }
-#endif
       break;
     }
 
@@ -402,19 +510,17 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
   case Message::FollowRoute:
     {
       ref_ptr<FollowRouteMessage> const msg = message;
-#ifdef OMIM_OS_ANDROID
-      // After night style switching on android and drape engine reinitialization FrontendRenderer
+
+      // After night style switching or drape engine reinitialization FrontendRenderer can
       // receive FollowRoute message before FlushRoute message, so we need to postpone its processing.
-      if (!m_myPositionController->IsInRouting())
+      if (m_routeRenderer->GetRouteData() == nullptr)
       {
         m_pendingFollowRoute.reset(
               new FollowRouteData(msg->GetPreferredZoomLevel(), msg->GetPreferredZoomLevelIn3d(),
                                   msg->GetRotationAngle(), msg->GetAngleFOV()));
         break;
       }
-#else
-      ASSERT(m_myPositionController->IsInRouting(), ());
-#endif
+
       FollowRoute(msg->GetPreferredZoomLevel(), msg->GetPreferredZoomLevelIn3d(),
                   msg->GetRotationAngle(), msg->GetAngleFOV());
       break;
@@ -431,12 +537,12 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
 
   case Message::UpdateMapStyle:
     {
-      // Clear tile tree.
-      m_tileTree->Invalidate();
-
       // Clear all graphics.
-      m_renderGroups.clear();
-      m_deferredRenderGroups.clear();
+      for (RenderLayer & layer : m_layers)
+      {
+        layer.m_renderGroups.clear();
+        layer.m_isDirty = false;
+      }
 
       // Invalidate read manager.
       {
@@ -486,11 +592,9 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       }
 
       // Request new tiles.
-      TTilesCollection tiles;
       ScreenBase screen = m_userEventStream.GetCurrentScreen();
-      ResolveTileKeys(screen.ClipRect(), tiles);
-
-      m_requestedTiles->Set(screen, m_isIsometry || screen.isPerspective(), move(tiles));
+      m_lastReadedModelView = screen;
+      m_requestedTiles->Set(screen, m_isIsometry || screen.isPerspective(), ResolveTileKeys(screen));
       m_commutator->PostMessage(ThreadsCommutator::ResourceUploadThread,
                                 make_unique_dp<UpdateReadManagerMessage>(),
                                 MessagePriority::UberHighSingleton);
@@ -571,9 +675,61 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
       break;
     }
 
+  case Message::BlockTapEvents:
+    {
+      ref_ptr<BlockTapEventsMessage> msg = message;
+      m_blockTapEvents = msg->NeedBlock();
+      break;
+    }
+
+  case Message::SetKineticScrollEnabled:
+    {
+      ref_ptr<SetKineticScrollEnabledMessage> msg = message;
+      m_userEventStream.SetKineticScrollEnabled(msg->IsEnabled());
+      break;
+    }
+
+  case Message::SetTimeInBackground:
+    {
+      ref_ptr<SetTimeInBackgroundMessage> msg = message;
+      m_myPositionController->SetTimeInBackground(msg->GetTime());
+      break;
+    }
+
+  case Message::SetAddNewPlaceMode:
+    {
+      ref_ptr<SetAddNewPlaceModeMessage> msg = message;
+      m_userEventStream.SetKineticScrollEnabled(msg->IsKineticScrollEnabled());
+      m_dragBoundArea = msg->AcceptBoundArea();
+      if (msg->IsEnabled())
+      {
+        if (!m_dragBoundArea.empty())
+        {
+          PullToBoundArea(true /* randomPlace */, true /* applyZoom */);
+        }
+        else
+        {
+          m2::PointD const pt = msg->HasPosition()? msg->GetPosition() :
+                                m_userEventStream.GetCurrentScreen().GlobalRect().Center();
+          int zoom = kDoNotChangeZoom;
+          if (m_currentZoomLevel < scales::GetAddNewPlaceScale())
+            zoom = scales::GetAddNewPlaceScale();
+          AddUserEvent(SetCenterEvent(pt, zoom, true));
+        }
+      }
+      break;
+    }
+
+  case Message::SetDisplacementMode:
+    {
+      ref_ptr<SetDisplacementModeMessage> msg = message;
+      m_overlayTree->SetDisplacementMode(msg->GetMode());
+      break;
+    }
+
   case Message::Invalidate:
     {
-      // Do nothing here, new frame will be rendered because of this message processing.
+      m_myPositionController->ResetRoutingNotFollowTimer();
       break;
     }
 
@@ -590,51 +746,56 @@ unique_ptr<threads::IRoutine> FrontendRenderer::CreateRoutine()
 void FrontendRenderer::FollowRoute(int preferredZoomLevel, int preferredZoomLevelIn3d,
                                    double rotationAngle, double angleFOV)
 {
+
+  m_myPositionController->ActivateRouting(!m_enablePerspectiveInNavigation ? preferredZoomLevel
+                                                                           : preferredZoomLevelIn3d);
+
   if (m_enablePerspectiveInNavigation)
   {
-    bool immediatelyStart = !m_myPositionController->IsRotationActive();
-    AddUserEvent(EnablePerspectiveEvent(rotationAngle, angleFOV,
-                                        true /* animated */, immediatelyStart));
+    bool immediatelyStart = !m_myPositionController->IsRotationAvailable();
+    AddUserEvent(EnablePerspectiveEvent(rotationAngle, angleFOV, true /* animated */, immediatelyStart));
   }
 
-  m_myPositionController->NextMode(!m_enablePerspectiveInNavigation ? preferredZoomLevel
-                                                                    : preferredZoomLevelIn3d);
   m_overlayTree->SetFollowingMode(true);
-
 }
 
 void FrontendRenderer::InvalidateRect(m2::RectD const & gRect)
 {
-  TTilesCollection tiles;
   ScreenBase screen = m_userEventStream.GetCurrentScreen();
   m2::RectD rect = gRect;
   if (rect.Intersect(screen.ClipRect()))
   {
-    m_tileTree->Invalidate();
-    ResolveTileKeys(rect, tiles);
-
-    auto eraseFunction = [&tiles](vector<drape_ptr<RenderGroup>> & groups)
+    // Find tiles to invalidate.
+    TTilesCollection tiles;
+    int const dataZoomLevel = ClipTileZoomByMaxDataZoom(m_currentZoomLevel);
+    CalcTilesCoverage(rect, dataZoomLevel, [this, &rect, &tiles](int tileX, int tileY)
     {
-      vector<drape_ptr<RenderGroup> > newGroups;
-      for (drape_ptr<RenderGroup> & group : groups)
-      {
-        if (tiles.find(group->GetTileKey()) == tiles.end())
-          newGroups.push_back(move(group));
-      }
+      TileKey const key(tileX, tileY, m_currentZoomLevel);
+      if (rect.IsIntersect(key.GetGlobalRect()))
+        tiles.insert(key);
+    });
 
-      swap(groups, newGroups);
+    // Remove tiles to invalidate from screen.
+    auto eraseFunction = [&tiles](drape_ptr<RenderGroup> const & group)
+    {
+      return tiles.find(group->GetTileKey()) != tiles.end();
     };
+    for (RenderLayer & layer : m_layers)
+    {
+      RemoveGroups(eraseFunction, layer.m_renderGroups, make_ref(m_overlayTree));
+      layer.m_isDirty = true;
+    }
 
-    eraseFunction(m_renderGroups);
-    eraseFunction(m_deferredRenderGroups);
-
+    // Remove tiles to invalidate from backend renderer.
     BaseBlockingMessage::Blocker blocker;
     m_commutator->PostMessage(ThreadsCommutator::ResourceUploadThread,
                               make_unique_dp<InvalidateReadManagerRectMessage>(blocker, tiles),
                               MessagePriority::High);
     blocker.Wait();
 
-    m_requestedTiles->Set(screen, m_isIsometry || screen.isPerspective(), move(tiles));
+    // Request new tiles.
+    m_lastReadedModelView = screen;
+    m_requestedTiles->Set(screen, m_isIsometry || screen.isPerspective(), ResolveTileKeys(screen));
     m_commutator->PostMessage(ThreadsCommutator::ResourceUploadThread,
                               make_unique_dp<UpdateReadManagerMessage>(),
                               MessagePriority::UberHighSingleton);
@@ -656,77 +817,43 @@ void FrontendRenderer::OnResize(ScreenBase const & screen)
   m_framebuffer->SetSize(viewportRect.SizeX(), viewportRect.SizeY());
 }
 
-void FrontendRenderer::AddToRenderGroup(vector<drape_ptr<RenderGroup>> & groups,
-                                        dp::GLState const & state,
+void FrontendRenderer::AddToRenderGroup(dp::GLState const & state,
                                         drape_ptr<dp::RenderBucket> && renderBucket,
                                         TileKey const & newTile)
 {
+  RenderLayer::RenderLayerID id = RenderLayer::GetLayerID(state);
+  RenderLayer & layer = m_layers[id];
+
+  for (auto const & g : layer.m_renderGroups)
+  {
+    if (!g->IsPendingOnDelete() && g->GetState() == state && g->GetTileKey().EqualStrict(newTile))
+    {
+      g->AddBucket(move(renderBucket));
+      layer.m_isDirty = true;
+      return;
+    }
+  }
+
   drape_ptr<RenderGroup> group = make_unique_dp<RenderGroup>(state, newTile);
   ref_ptr<dp::GpuProgram> program = m_gpuProgramManager->GetProgram(state.GetProgramIndex());
   ref_ptr<dp::GpuProgram> program3d = m_gpuProgramManager->GetProgram(state.GetProgram3dIndex());
-
   group->SetRenderParams(program, program3d, make_ref(&m_generalUniforms));
   group->AddBucket(move(renderBucket));
-  groups.push_back(move(group));
+
+  layer.m_renderGroups.push_back(move(group));
+  layer.m_isDirty = true;
 }
 
-void FrontendRenderer::OnAddRenderGroup(TileKey const & tileKey, dp::GLState const & state,
-                                        drape_ptr<dp::RenderBucket> && renderBucket)
-{
-  AddToRenderGroup(m_renderGroups, state, move(renderBucket), tileKey);
-  m_renderGroups.back()->Appear();
-}
-
-void FrontendRenderer::OnDeferRenderGroup(TileKey const & tileKey, dp::GLState const & state,
-                                          drape_ptr<dp::RenderBucket> && renderBucket)
-{
-  AddToRenderGroup(m_deferredRenderGroups, state, move(renderBucket), tileKey);
-}
-
-void FrontendRenderer::OnActivateTile(TileKey const & tileKey)
-{
-  for(auto it = m_deferredRenderGroups.begin(); it != m_deferredRenderGroups.end();)
-  {
-    if ((*it)->GetTileKey() == tileKey)
-    {
-      m_renderGroups.push_back(move(*it));
-      it = m_deferredRenderGroups.erase(it);
-      m_renderGroups.back()->Appear();
-    }
-    else
-    {
-      ++it;
-    }
-  }
-}
-
-void FrontendRenderer::OnRemoveTile(TileKey const & tileKey)
-{
-  auto removePredicate = [&tileKey](drape_ptr<RenderGroup> const & group)
-  {
-    return group->GetTileKey() == tileKey;
-  };
-  RemoveRenderGroups(removePredicate);
-}
-
-void FrontendRenderer::RemoveRenderGroups(TRenderGroupRemovePredicate const & predicate)
+void FrontendRenderer::RemoveRenderGroupsLater(TRenderGroupRemovePredicate const & predicate)
 {
   ASSERT(predicate != nullptr, ());
-  m_overlayTree->ForceUpdate();
 
-  for(auto const & group : m_renderGroups)
+  for (RenderLayer & layer : m_layers)
   {
-    if (predicate(group))
-    {
-      group->DeleteLater();
-      group->Disappear();
-    }
+    RemoveTilePredicate f(predicate);
+    RemoveGroups(f, layer.m_renderGroups, make_ref(m_overlayTree));
+    layer.m_isDirty |= f.m_deletionMark;
   }
-
-  m_deferredRenderGroups.erase(remove_if(m_deferredRenderGroups.begin(),
-                                         m_deferredRenderGroups.end(),
-                                         predicate),
-                               m_deferredRenderGroups.end());
 }
 
 bool FrontendRenderer::CheckTileGenerations(TileKey const & tileKey)
@@ -740,18 +867,17 @@ bool FrontendRenderer::CheckTileGenerations(TileKey const & tileKey)
   {
     return group->GetTileKey() == tileKey && group->GetTileKey().m_generation < tileKey.m_generation;
   };
-  RemoveRenderGroups(removePredicate);
+  RemoveRenderGroupsLater(removePredicate);
 
   return result;
 }
 
 void FrontendRenderer::OnCompassTapped()
 {
-  if (!m_myPositionController->StopCompassFollow())
-    m_userEventStream.AddEvent(RotateEvent(0.0));
+  m_myPositionController->OnCompassTapped();
 }
 
-FeatureID FrontendRenderer::GetVisiblePOI(m2::PointD const & pixelPoint) const
+FeatureID FrontendRenderer::GetVisiblePOI(m2::PointD const & pixelPoint)
 {
   double halfSize = VisualParams::Instance().GetTouchRectRadius();
   m2::PointD sizePoint(halfSize, halfSize);
@@ -759,16 +885,17 @@ FeatureID FrontendRenderer::GetVisiblePOI(m2::PointD const & pixelPoint) const
   return GetVisiblePOI(selectRect);
 }
 
-FeatureID FrontendRenderer::GetVisiblePOI(m2::RectD const & pixelRect) const
+FeatureID FrontendRenderer::GetVisiblePOI(m2::RectD const & pixelRect)
 {
   m2::PointD pt = pixelRect.Center();
-  dp::OverlayTree::TSelectResult selectResult;
+  dp::TOverlayContainer selectResult;
+  ScreenBase const & screen = m_userEventStream.GetCurrentScreen();
+  if (m_overlayTree->IsNeedUpdate())
+    BuildOverlayTree(screen);
   m_overlayTree->Select(pixelRect, selectResult);
 
   double dist = numeric_limits<double>::max();
   FeatureID featureID;
-
-  ScreenBase const & screen = m_userEventStream.GetCurrentScreen();
   for (ref_ptr<dp::OverlayHandle> handle : selectResult)
   {
     double const curDist = pt.SquareLength(handle->GetPivot(screen, screen.isPerspective()));
@@ -789,9 +916,49 @@ void FrontendRenderer::PrepareGpsTrackPoints(size_t pointsCount)
                             MessagePriority::Normal);
 }
 
+void FrontendRenderer::PullToBoundArea(bool randomPlace, bool applyZoom)
+{
+  if (m_dragBoundArea.empty())
+    return;
+
+  ScreenBase const & screen = m_userEventStream.GetCurrentScreen();
+  m2::PointD const center = screen.GlobalRect().Center();
+  if (!m2::IsPointInsideTriangles(center, m_dragBoundArea))
+  {
+    m2::PointD const dest = randomPlace ? m2::GetRandomPointInsideTriangles(m_dragBoundArea) :
+                                          m2::ProjectPointToTriangles(center, m_dragBoundArea);
+    int zoom = kDoNotChangeZoom;
+    if (applyZoom && m_currentZoomLevel < scales::GetAddNewPlaceScale())
+      zoom = scales::GetAddNewPlaceScale();
+    AddUserEvent(SetCenterEvent(dest, zoom, true));
+  }
+}
+
+void FrontendRenderer::ProcessSelection(ref_ptr<SelectObjectMessage> msg)
+{
+  if (msg->IsDismiss())
+  {
+    m_selectionShape->Hide();
+  }
+  else
+  {
+    double offsetZ = 0.0;
+    if (m_userEventStream.GetCurrentScreen().isPerspective())
+    {
+      dp::TOverlayContainer selectResult;
+      if (m_overlayTree->IsNeedUpdate())
+        BuildOverlayTree(m_userEventStream.GetCurrentScreen());
+      m_overlayTree->Select(msg->GetPosition(), selectResult);
+      for (ref_ptr<dp::OverlayHandle> handle : selectResult)
+        offsetZ = max(offsetZ, handle->GetPivotZ());
+    }
+    m_selectionShape->Show(msg->GetSelectedObject(), msg->GetPosition(), offsetZ, msg->IsAnim());
+  }
+}
+
 void FrontendRenderer::BeginUpdateOverlayTree(ScreenBase const & modelView)
 {
-  if (m_overlayTree->Frame(modelView.isPerspective()))
+  if (m_overlayTree->Frame())
     m_overlayTree->StartOverlayPlacing(modelView);
 }
 
@@ -817,78 +984,17 @@ void FrontendRenderer::RenderScene(ScreenBase const & modelView)
 
   bool const isPerspective = modelView.isPerspective();
 
-  RenderGroupComparator comparator;
-  sort(m_renderGroups.begin(), m_renderGroups.end(), bind(&RenderGroupComparator::operator (), &comparator, _1, _2));
-
-  BeginUpdateOverlayTree(modelView);
-  size_t eraseCount = 0;
   GLFunctions::glEnable(gl_const::GLDepthTest);
-  for (size_t i = 0; i < m_renderGroups.size(); ++i)
-  {
-    drape_ptr<RenderGroup> & group = m_renderGroups[i];
-    if (group->IsEmpty())
-      continue;
-
-    if (group->CanBeDeleted())
-    {
-      group.reset();
-      ++eraseCount;
-      continue;
-    }
-
-    switch (group->GetState().GetDepthLayer())
-    {
-    case dp::GLState::OverlayLayer:
-      UpdateOverlayTree(modelView, group);
-      break;
-    case dp::GLState::DynamicGeometry:
-      group->Update(modelView);
-      break;
-    default:
-      break;
-    }
-  }
-  EndUpdateOverlayTree();
-  m_renderGroups.resize(m_renderGroups.size() - eraseCount);
-
   m_viewport.Apply();
   RefreshBgColor();
   GLFunctions::glClear();
 
-  dp::GLState::DepthLayer prevLayer = dp::GLState::GeometryLayer;
-  size_t currentRenderGroup = 0;
-  bool has3dAreas = false;
-  size_t area3dRenderGroupStart = 0;
-  size_t area3dRenderGroupEnd = 0;
-  for (; currentRenderGroup < m_renderGroups.size(); ++currentRenderGroup)
-  {
-    drape_ptr<RenderGroup> const & group = m_renderGroups[currentRenderGroup];
+  Render2dLayer(modelView);
 
-    dp::GLState const & state = group->GetState();
-
-    if ((isPerspective || m_isIsometry) && state.GetProgram3dIndex() == gpu::AREA_3D_PROGRAM)
-    {
-      if (!has3dAreas)
-      {
-        area3dRenderGroupStart = currentRenderGroup;
-        has3dAreas = true;
-      }
-      area3dRenderGroupEnd = currentRenderGroup;
-      continue;
-    }
-
-    dp::GLState::DepthLayer layer = state.GetDepthLayer();
-    if (prevLayer != layer && layer == dp::GLState::OverlayLayer)
-      break;
-
-    prevLayer = layer;
-    RenderSingleGroup(modelView, make_ref(group));
-  }
-
-  GLFunctions::glDisable(gl_const::GLDepthTest);
   bool hasSelectedPOI = false;
   if (m_selectionShape != nullptr)
   {
+    GLFunctions::glDisable(gl_const::GLDepthTest);
     SelectionShape::ESelectedObject selectedObject = m_selectionShape->GetSelectedObject();
     if (selectedObject == SelectionShape::OBJECT_MY_POSITION)
     {
@@ -898,7 +1004,7 @@ void FrontendRenderer::RenderScene(ScreenBase const & modelView)
     }
     else if (selectedObject == SelectionShape::OBJECT_POI)
     {
-      if (!isPerspective && !has3dAreas)
+      if (!isPerspective && m_layers[RenderLayer::Geometry3dID].m_renderGroups.empty())
         m_selectionShape->Render(modelView, make_ref(m_gpuProgramManager), m_generalUniforms);
       else
         hasSelectedPOI = true;
@@ -908,34 +1014,20 @@ void FrontendRenderer::RenderScene(ScreenBase const & modelView)
   m_myPositionController->Render(MyPositionController::RenderAccuracy,
                                  modelView, make_ref(m_gpuProgramManager), m_generalUniforms);
 
-  if (has3dAreas)
+  if (m_framebuffer->IsSupported())
   {
-    if (m_framebuffer->IsSupported())
-    {
-      m_framebuffer->Enable();
-      GLFunctions::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-      GLFunctions::glClear();
-      GLFunctions::glClearDepth();
-    }
-    else
-    {
-      GLFunctions::glClearDepth();
-    }
-
-    GLFunctions::glEnable(gl_const::GLDepthTest);
-    for (size_t index = area3dRenderGroupStart; index <= area3dRenderGroupEnd; ++index)
-    {
-      drape_ptr<RenderGroup> const & group = m_renderGroups[index];
-      if (group->GetState().GetProgram3dIndex() == gpu::AREA_3D_PROGRAM)
-        RenderSingleGroup(modelView, make_ref(group));
-    }
-
-    if (m_framebuffer->IsSupported())
-    {
-      m_framebuffer->Disable();
-      GLFunctions::glDisable(gl_const::GLDepthTest);
-      m_transparentLayer->Render(m_framebuffer->GetTextureId(), make_ref(m_gpuProgramManager));
-    }
+    m_framebuffer->Enable();
+    GLFunctions::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    GLFunctions::glClear();
+    Render3dLayer(modelView);
+    m_framebuffer->Disable();
+    GLFunctions::glDisable(gl_const::GLDepthTest);
+    m_transparentLayer->Render(m_framebuffer->GetTextureId(), make_ref(m_gpuProgramManager));
+  }
+  else
+  {
+    GLFunctions::glClearDepth();
+    Render3dLayer(modelView);
   }
 
   if (hasSelectedPOI)
@@ -946,13 +1038,9 @@ void FrontendRenderer::RenderScene(ScreenBase const & modelView)
 
   GLFunctions::glEnable(gl_const::GLDepthTest);
   GLFunctions::glClearDepth();
-  for (; currentRenderGroup < m_renderGroups.size(); ++currentRenderGroup)
-  {
-    drape_ptr<RenderGroup> const & group = m_renderGroups[currentRenderGroup];
-    RenderSingleGroup(modelView, make_ref(group));
-  }
+  RenderOverlayLayer(modelView);
 
-  m_gpsTrackRenderer->RenderTrack(modelView, GetCurrentZoomLevel(),
+  m_gpsTrackRenderer->RenderTrack(modelView, m_currentZoomLevel,
                                   make_ref(m_gpuProgramManager), m_generalUniforms);
 
   GLFunctions::glDisable(gl_const::GLDepthTest);
@@ -1001,6 +1089,54 @@ void FrontendRenderer::RenderScene(ScreenBase const & modelView)
   MergeBuckets();
 }
 
+void FrontendRenderer::Render2dLayer(ScreenBase const & modelView)
+{
+  RenderLayer & layer2d = m_layers[RenderLayer::Geometry2dID];
+  layer2d.Sort(make_ref(m_overlayTree));
+
+  for (drape_ptr<RenderGroup> const & group : layer2d.m_renderGroups)
+    RenderSingleGroup(modelView, make_ref(group));
+}
+
+void FrontendRenderer::Render3dLayer(ScreenBase const & modelView)
+{
+  GLFunctions::glEnable(gl_const::GLDepthTest);
+  RenderLayer & layer = m_layers[RenderLayer::Geometry3dID];
+  layer.Sort(make_ref(m_overlayTree));
+  for (drape_ptr<RenderGroup> const & group : layer.m_renderGroups)
+    RenderSingleGroup(modelView, make_ref(group));
+}
+
+void FrontendRenderer::RenderOverlayLayer(ScreenBase const & modelView)
+{
+  RenderLayer & overlay = m_layers[RenderLayer::OverlayID];
+  BuildOverlayTree(modelView);
+  for (drape_ptr<RenderGroup> & group : overlay.m_renderGroups)
+    RenderSingleGroup(modelView, make_ref(group));
+}
+  
+void FrontendRenderer::BuildOverlayTree(ScreenBase const & modelView)
+{
+  RenderLayer & overlay = m_layers[RenderLayer::OverlayID];
+  overlay.Sort(make_ref(m_overlayTree));
+  BeginUpdateOverlayTree(modelView);
+  for (drape_ptr<RenderGroup> & group : overlay.m_renderGroups)
+    UpdateOverlayTree(modelView, group);
+  EndUpdateOverlayTree();
+}
+
+void FrontendRenderer::PrepareBucket(dp::GLState const & state, drape_ptr<dp::RenderBucket> & bucket)
+{
+  ref_ptr<dp::GpuProgram> program = m_gpuProgramManager->GetProgram(state.GetProgramIndex());
+  ref_ptr<dp::GpuProgram> program3d = m_gpuProgramManager->GetProgram(state.GetProgram3dIndex());
+  bool const isPerspective = m_userEventStream.GetCurrentScreen().isPerspective();
+  if (isPerspective)
+    program3d->Bind();
+  else
+    program->Bind();
+  bucket->GetBuffer()->Build(isPerspective ? program3d : program);
+}
+
 void FrontendRenderer::MergeBuckets()
 {
   if (BatchMergeHelper::IsMergeSupported() == false)
@@ -1010,37 +1146,50 @@ void FrontendRenderer::MergeBuckets()
   if (m_mergeBucketsCounter < 60)
     return;
 
-  if (m_renderGroups.empty())
-    return;
-
-  using TGroupMap = map<MergedGroupKey, vector<drape_ptr<RenderGroup>>>;
-  TGroupMap forMerge;
-
-  vector<drape_ptr<RenderGroup>> newGroups;
-  newGroups.reserve(m_renderGroups.size());
-
   m_mergeBucketsCounter = 0;
-  size_t groupsCount = m_renderGroups.size();
-  for (size_t i = 0; i < groupsCount; ++i)
+
+  auto mergeFn = [](RenderLayer & layer, bool isPerspective)
   {
-    ref_ptr<RenderGroup> group = make_ref(m_renderGroups[i]);
-    dp::GLState state = group->GetState();
-    if (state.GetDepthLayer() == dp::GLState::GeometryLayer && !group->IsPendingOnDelete())
+    if (layer.m_renderGroups.empty())
+      return;
+
+    using TGroupMap = map<MergedGroupKey, vector<drape_ptr<RenderGroup>>>;
+    TGroupMap forMerge;
+
+    vector<drape_ptr<RenderGroup>> newGroups;
+    newGroups.reserve(layer.m_renderGroups.size());
+
+    size_t groupsCount = layer.m_renderGroups.size();
+    for (size_t i = 0; i < groupsCount; ++i)
     {
-      MergedGroupKey const key(state, group->GetTileKey());
-      forMerge[key].push_back(move(m_renderGroups[i]));
+      ref_ptr<RenderGroup> group = make_ref(layer.m_renderGroups[i]);
+      if (!group->IsPendingOnDelete())
+      {
+        dp::GLState state = group->GetState();
+        ASSERT_EQUAL(state.GetDepthLayer(), dp::GLState::GeometryLayer, ());
+        forMerge[MergedGroupKey(state, group->GetTileKey())].push_back(move(layer.m_renderGroups[i]));
+      }
+      else
+      {
+        newGroups.push_back(move(layer.m_renderGroups[i]));
+      }
     }
-    else
+
+    for (TGroupMap::value_type & node : forMerge)
     {
-      newGroups.push_back(move(m_renderGroups[i]));
+      if (node.second.size() < 2)
+        newGroups.emplace_back(move(node.second.front()));
+      else
+        BatchMergeHelper::MergeBatches(node.second, newGroups, isPerspective);
     }
-  }
+
+    layer.m_renderGroups = move(newGroups);
+    layer.m_isDirty = true;
+  };
 
   bool const isPerspective = m_userEventStream.GetCurrentScreen().isPerspective();
-  for (TGroupMap::value_type & node : forMerge)
-    BatchMergeHelper::MergeBatches(node.second, newGroups, isPerspective);
-
-  m_renderGroups = move(newGroups);
+  mergeFn(m_layers[RenderLayer::Geometry2dID], isPerspective);
+  mergeFn(m_layers[RenderLayer::Geometry3dID], isPerspective);
 }
 
 bool FrontendRenderer::IsPerspective() const
@@ -1108,27 +1257,16 @@ void FrontendRenderer::RefreshBgColor()
   GLFunctions::glClearColor(c.GetRedF(), c.GetGreenF(), c.GetBlueF(), 1.0f);
 }
 
-int FrontendRenderer::GetCurrentZoomLevel() const
-{
-  return m_currentZoomLevel;
-}
-
-int FrontendRenderer::GetCurrentZoomLevelForData() const
-{
-  int const upperScale = scales::GetUpperScale();
-  return (m_currentZoomLevel <= upperScale ? m_currentZoomLevel : upperScale);
-}
-
 void FrontendRenderer::DisablePerspective()
 {
   m_perspectiveDiscarded = false;
   AddUserEvent(DisablePerspectiveEvent());
 }
 
-void FrontendRenderer::CheckIsometryMinScale(const ScreenBase &screen)
+void FrontendRenderer::CheckIsometryMinScale(ScreenBase const & screen)
 {
   bool const isScaleAllowableIn3d = UserEventStream::IsScaleAllowableIn3d(m_currentZoomLevel);
-  bool const isIsometry = m_enable3dBuildings && isScaleAllowableIn3d;
+  bool const isIsometry = m_enable3dBuildings && !m_choosePositionMode && isScaleAllowableIn3d;
   if (m_isIsometry != isIsometry)
   {
     m_isIsometry = isIsometry;
@@ -1152,14 +1290,30 @@ void FrontendRenderer::CheckPerspectiveMinScale()
 
 void FrontendRenderer::ResolveZoomLevel(ScreenBase const & screen)
 {
+  int const prevZoomLevel = m_currentZoomLevel;
   m_currentZoomLevel = GetDrawTileScale(screen);
+
+  if (prevZoomLevel != m_currentZoomLevel)
+    UpdateCanBeDeletedStatus();
 
   CheckIsometryMinScale(screen);
   CheckPerspectiveMinScale();
+  UpdateDisplacementEnabled();
+}
+
+void FrontendRenderer::UpdateDisplacementEnabled()
+{
+  if (m_choosePositionMode)
+    m_overlayTree->SetDisplacementEnabled(m_currentZoomLevel < scales::GetAddNewPlaceScale());
+  else
+    m_overlayTree->SetDisplacementEnabled(true);
 }
 
 void FrontendRenderer::OnTap(m2::PointD const & pt, bool isLongTap)
 {
+  if (m_blockTapEvents)
+    return;
+
   double halfSize = VisualParams::Instance().GetTouchRectRadius();
   m2::PointD sizePoint(halfSize, halfSize);
   m2::RectD selectRect(pt - sizePoint, pt + sizePoint);
@@ -1172,7 +1326,7 @@ void FrontendRenderer::OnTap(m2::PointD const & pt, bool isLongTap)
     isMyPosition = selectRect.IsPointInside(pt);
   }
 
-  m_tapEventInfoFn(pt, isLongTap, isMyPosition, GetVisiblePOI(selectRect));
+  m_tapEventInfoFn({pt, isLongTap, isMyPosition, GetVisiblePOI(selectRect)});
 }
 
 void FrontendRenderer::OnForceTap(m2::PointD const & pt)
@@ -1227,6 +1381,7 @@ void FrontendRenderer::OnDragStarted()
 void FrontendRenderer::OnDragEnded(m2::PointD const & distance)
 {
   m_myPositionController->DragEnded(distance);
+  PullToBoundArea(false /* randomPlace */, false /* applyZoom */);
 }
 
 void FrontendRenderer::OnScaleStarted()
@@ -1257,62 +1412,79 @@ void FrontendRenderer::CorrectScalePoint(m2::PointD & pt1, m2::PointD & pt2) con
 void FrontendRenderer::OnScaleEnded()
 {
   m_myPositionController->ScaleEnded();
+  PullToBoundArea(false /* randomPlace */, false /* applyZoom */);
 }
 
-void FrontendRenderer::OnAnimationStarted(ref_ptr<BaseModelViewAnimation> anim)
+void FrontendRenderer::OnAnimationStarted(ref_ptr<Animation> anim)
 {
   m_myPositionController->AnimationStarted(anim);
 }
 
-void FrontendRenderer::ResolveTileKeys(ScreenBase const & screen, TTilesCollection & tiles)
+void FrontendRenderer::OnPerspectiveSwitchRejected()
 {
-  m2::RectD const & clipRect = screen.ClipRect();
-  ResolveTileKeys(clipRect, tiles);
+   if (m_perspectiveDiscarded)
+     m_perspectiveDiscarded = false;
 }
 
-void FrontendRenderer::ResolveTileKeys(m2::RectD const & rect, TTilesCollection & tiles)
+void FrontendRenderer::OnTouchMapAction()
 {
-  // equal for x and y
-  int const zoomLevel = GetCurrentZoomLevelForData();
+  m_myPositionController->ResetRoutingNotFollowTimer();
+}
 
-  double const range = MercatorBounds::maxX - MercatorBounds::minX;
-  double const rectSize = range / (1 << zoomLevel);
+TTilesCollection FrontendRenderer::ResolveTileKeys(ScreenBase const & screen)
+{
+  m2::RectD const & rect = screen.ClipRect();
+  int const dataZoomLevel = ClipTileZoomByMaxDataZoom(m_currentZoomLevel);
 
-  int const minTileX = static_cast<int>(floor(rect.minX() / rectSize));
-  int const maxTileX = static_cast<int>(ceil(rect.maxX() / rectSize));
-  int const minTileY = static_cast<int>(floor(rect.minY() / rectSize));
-  int const maxTileY = static_cast<int>(ceil(rect.maxY() / rectSize));
+  m_notFinishedTiles.clear();
 
-  // request new tiles
-  m_tileTree->BeginRequesting(zoomLevel, rect);
-  for (int tileY = minTileY; tileY < maxTileY; ++tileY)
+  // Request new tiles.
+  TTilesCollection tiles;
+  buffer_vector<TileKey, 8> tilesToDelete;
+  CoverageResult result = CalcTilesCoverage(rect, dataZoomLevel,
+                                            [this, &rect, &tiles, &tilesToDelete](int tileX, int tileY)
   {
-    for (int tileX = minTileX; tileX < maxTileX; ++tileX)
+    TileKey const key(tileX, tileY, m_currentZoomLevel);
+    if (rect.IsIntersect(key.GetGlobalRect()))
     {
-      TileKey key(tileX, tileY, zoomLevel);
-      if (rect.IsIntersect(key.GetGlobalRect()))
-      {
-        key.m_styleZoomLevel = GetCurrentZoomLevel();
-        tiles.insert(key);
-        m_tileTree->RequestTile(key);
-      }
+      tiles.insert(key);
+      m_notFinishedTiles.insert(key);
     }
-  }
-  m_tileTree->EndRequesting();
+    else
+    {
+      tilesToDelete.push_back(key);
+    }
+  });
+
+  // Remove old tiles.
+  auto removePredicate = [this, &result, &tilesToDelete](drape_ptr<RenderGroup> const & group)
+  {
+    TileKey const & key = group->GetTileKey();
+    return group->GetTileKey().m_zoomLevel == m_currentZoomLevel &&
+           (key.m_x < result.m_minTileX || key.m_x >= result.m_maxTileX ||
+           key.m_y < result.m_minTileY || key.m_y >= result.m_maxTileY ||
+           find(tilesToDelete.begin(), tilesToDelete.end(), key) != tilesToDelete.end());
+  };
+  for (RenderLayer & layer : m_layers)
+    layer.m_isDirty |= RemoveGroups(removePredicate, layer.m_renderGroups, make_ref(m_overlayTree));
+
+  RemoveRenderGroupsLater([this](drape_ptr<RenderGroup> const & group)
+  {
+    return group->GetTileKey().m_zoomLevel != m_currentZoomLevel;
+  });
+
+  return tiles;
 }
 
 FrontendRenderer::Routine::Routine(FrontendRenderer & renderer) : m_renderer(renderer) {}
 
 void FrontendRenderer::Routine::Do()
 {
+  m_renderer.m_contextFactory->waitForInitialization();
+
   gui::DrapeGui::Instance().ConnectOnCompassTappedHandler(bind(&FrontendRenderer::OnCompassTapped, &m_renderer));
   m_renderer.m_myPositionController->SetListener(ref_ptr<MyPositionController::Listener>(&m_renderer));
   m_renderer.m_userEventStream.SetListener(ref_ptr<UserEventStream::Listener>(&m_renderer));
-
-  m_renderer.m_tileTree->SetHandlers(bind(&FrontendRenderer::OnAddRenderGroup, &m_renderer, _1, _2, _3),
-                                     bind(&FrontendRenderer::OnDeferRenderGroup, &m_renderer, _1, _2, _3),
-                                     bind(&FrontendRenderer::OnActivateTile, &m_renderer, _1),
-                                     bind(&FrontendRenderer::OnRemoveTile, &m_renderer, _1));
 
   dp::OGLContext * context = m_renderer.m_contextFactory->getDrawContext();
   context->makeCurrent();
@@ -1332,6 +1504,7 @@ void FrontendRenderer::Routine::Do()
   GLFunctions::glFrontFace(gl_const::GLClockwise);
   GLFunctions::glCullFace(gl_const::GLBack);
   GLFunctions::glEnable(gl_const::GLCullFace);
+  GLFunctions::glEnable(gl_const::GLScissorTest);
 
   m_renderer.m_gpuProgramManager->Init();
 
@@ -1363,12 +1536,11 @@ void FrontendRenderer::Routine::Do()
       m_renderer.PrepareScene(modelView);
 
     // Check for a frame is active.
-    bool isActiveFrame = modelViewChanged || viewportChanged;
+    bool isActiveFrame = modelViewChanged || viewportChanged ||
+                         m_renderer.m_myPositionController->IsWaitingForTimers();
 
     isActiveFrame |= m_renderer.m_texMng->UpdateDynamicTextures();
     m_renderer.RenderScene(modelView);
-
-    isActiveFrame |= InterpolationHolder::Instance().Advance(frameTime);
 
     if (modelViewChanged)
     {
@@ -1376,16 +1548,24 @@ void FrontendRenderer::Routine::Do()
       m_renderer.EmitModelViewChanged(modelView);
     }
 
+    isActiveFrame |= InterpolationHolder::Instance().Advance(frameTime);
+    AnimationSystem::Instance().Advance(frameTime);
+
     isActiveFrame |= m_renderer.m_userEventStream.IsWaitingForActionCompletion();
 
     if (isActiveFrame)
       activityTimer.Reset();
 
+    bool isValidFrameTime = true;
     if (activityTimer.ElapsedSeconds() > kMaxInactiveSeconds)
     {
       // Process a message or wait for a message.
-      m_renderer.ProcessSingleMessage();
+      // IsRenderingEnabled() can return false in case of rendering disabling and we must prevent
+      // possibility of infinity waiting in ProcessSingleMessage.
+      m_renderer.ProcessSingleMessage(m_renderer.IsRenderingEnabled());
       activityTimer.Reset();
+      timer.Reset();
+      isValidFrameTime = false;
     }
     else
     {
@@ -1407,7 +1587,7 @@ void FrontendRenderer::Routine::Do()
 
     // Limit fps in following mode.
     double constexpr kFrameTime = 1.0 / 30.0;
-    if (m_renderer.m_myPositionController->IsFollowingActive() && frameTime < kFrameTime)
+    if (isValidFrameTime && m_renderer.m_myPositionController->IsRouteFollowingActive() && frameTime < kFrameTime)
     {
       uint32_t const ms = static_cast<uint32_t>((kFrameTime - frameTime) * 1000);
       this_thread::sleep_for(milliseconds(ms));
@@ -1425,9 +1605,9 @@ void FrontendRenderer::Routine::Do()
 
 void FrontendRenderer::ReleaseResources()
 {
-  m_tileTree.reset();
-  m_renderGroups.clear();
-  m_deferredRenderGroups.clear();
+  for (RenderLayer & layer : m_layers)
+    layer.m_renderGroups.clear();
+
   m_userMarkRenderGroups.clear();
   m_guiRenderer.reset();
   m_myPositionController.reset();
@@ -1452,9 +1632,9 @@ void FrontendRenderer::PositionChanged(m2::PointD const & position)
   m_userPositionChangedFn(position);
 }
 
-void FrontendRenderer::ChangeModelView(m2::PointD const & center)
+void FrontendRenderer::ChangeModelView(m2::PointD const & center, int zoomLevel)
 {
-  AddUserEvent(SetCenterEvent(center, -1, true));
+  AddUserEvent(SetCenterEvent(center, zoomLevel, true));
 }
 
 void FrontendRenderer::ChangeModelView(double azimuth)
@@ -1464,7 +1644,7 @@ void FrontendRenderer::ChangeModelView(double azimuth)
 
 void FrontendRenderer::ChangeModelView(m2::RectD const & rect)
 {
-  AddUserEvent(SetRectEvent(rect, true, scales::GetUpperComfortScale(), true));
+  AddUserEvent(SetRectEvent(rect, true, kDoNotChangeZoom, true));
 }
 
 void FrontendRenderer::ChangeModelView(m2::PointD const & userPos, double azimuth,
@@ -1492,26 +1672,59 @@ void FrontendRenderer::PrepareScene(ScreenBase const & modelView)
 void FrontendRenderer::UpdateScene(ScreenBase const & modelView)
 {
   ResolveZoomLevel(modelView);
-  TTilesCollection tiles;
-  ResolveTileKeys(modelView, tiles);
 
   m_gpsTrackRenderer->Update();
 
   auto removePredicate = [this](drape_ptr<RenderGroup> const & group)
   {
-    return group->IsOverlay() && group->GetTileKey().m_styleZoomLevel > GetCurrentZoomLevel();
+    uint32_t const kMaxGenerationRange = 5;
+    TileKey const & key = group->GetTileKey();
+    return (group->IsOverlay() && key.m_zoomLevel > m_currentZoomLevel) ||
+            (m_maxGeneration - key.m_generation > kMaxGenerationRange);
   };
-  RemoveRenderGroups(removePredicate);
+  for (RenderLayer & layer : m_layers)
+    layer.m_isDirty |= RemoveGroups(removePredicate, layer.m_renderGroups, make_ref(m_overlayTree));
 
-  m_requestedTiles->Set(modelView, m_isIsometry || modelView.isPerspective(), move(tiles));
-  m_commutator->PostMessage(ThreadsCommutator::ResourceUploadThread,
-                            make_unique_dp<UpdateReadManagerMessage>(),
-                            MessagePriority::UberHighSingleton);
+  if (m_lastReadedModelView != modelView)
+  {
+    m_lastReadedModelView = modelView;
+    m_requestedTiles->Set(modelView, m_isIsometry || modelView.isPerspective(), ResolveTileKeys(modelView));
+    m_commutator->PostMessage(ThreadsCommutator::ResourceUploadThread,
+                              make_unique_dp<UpdateReadManagerMessage>(),
+                              MessagePriority::UberHighSingleton);
+  }
 }
 
 void FrontendRenderer::EmitModelViewChanged(ScreenBase const & modelView) const
 {
   m_modelViewChangedFn(modelView);
+}
+
+FrontendRenderer::RenderLayer::RenderLayerID FrontendRenderer::RenderLayer::GetLayerID(dp::GLState const & state)
+{
+  if (state.GetDepthLayer() == dp::GLState::OverlayLayer)
+    return OverlayID;
+
+  if (state.GetProgram3dIndex() == gpu::AREA_3D_PROGRAM)
+    return Geometry3dID;
+
+  return Geometry2dID;
+}
+
+void FrontendRenderer::RenderLayer::Sort(ref_ptr<dp::OverlayTree> overlayTree)
+{
+  if (!m_isDirty)
+    return;
+
+  RenderGroupComparator comparator;
+  sort(m_renderGroups.begin(), m_renderGroups.end(), ref(comparator));
+  m_isDirty = comparator.m_pendingOnDeleteFound;
+
+  while (!m_renderGroups.empty() && m_renderGroups.back()->CanBeDeleted())
+  {
+    m_renderGroups.back()->RemoveOverlay(overlayTree);
+    m_renderGroups.pop_back();
+  }
 }
 
 } // namespace df

@@ -55,6 +55,7 @@ void PoiSymbolShape::Draw(ref_ptr<dp::Batcher> batcher, ref_ptr<dp::TextureManag
                                                                          dp::Center,
                                                                          m_pt, pixelSize,
                                                                          GetOverlayPriority(),
+                                                                         m_params.m_symbolName,
                                                                          true);
   handle->SetPivotZ(m_params.m_posZ);
   handle->SetExtendingSize(m_params.m_extendingSize);
@@ -63,6 +64,14 @@ void PoiSymbolShape::Draw(ref_ptr<dp::Batcher> batcher, ref_ptr<dp::TextureManag
 
 uint64_t PoiSymbolShape::GetOverlayPriority() const
 {
+  // Set up maximum priority for shapes which created by user in the editor.
+  if (m_params.m_createdByEditor)
+    return dp::kPriorityMaskAll;
+  
+  // Set up minimal priority for shapes which belong to areas.
+  if (m_params.m_hasArea)
+    return 0;
+
   return dp::CalculateOverlayPriority(m_params.m_minVisibleScale, m_params.m_rank, m_params.m_depth);
 }
 

@@ -1,6 +1,7 @@
 #import "LocationManager.h"
 #import "LocationPredictor.h"
-#import "ViewController.h"
+#import "MWMMapDownloaderTypes.h"
+#import "MWMViewController.h"
 #import <MyTargetSDKCorp/MTRGNativeAppwallAd.h>
 
 #include "geometry/point2d.hpp"
@@ -10,13 +11,10 @@
 namespace search { struct AddressInfo; }
 
 @class MWMMapViewControlsManager;
-@class ShareActionSheet;
 @class MWMAPIBar;
 
-@interface MapViewController : ViewController <LocationObserver, UIPopoverControllerDelegate>
+@interface MapViewController : MWMViewController <LocationObserver>
 {
-  CGPoint m_popoverPos;
-  
   LocationPredictor * m_predictor;
 }
 
@@ -24,8 +22,7 @@ namespace search { struct AddressInfo; }
 - (void)onTerminate;
 - (void)onEnterForeground;
 - (void)onEnterBackground;
-
-- (void)dismissPopover;
+- (void)onGetFocus:(BOOL)isOnFocus;
 
 - (void)setMapStyle:(MapStyle)mapStyle;
 
@@ -35,7 +32,10 @@ namespace search { struct AddressInfo; }
 
 - (void)performAction:(NSString *)action;
 
+- (void)openMigration;
 - (void)openBookmarks;
+- (void)openMapsDownloader:(mwm::DownloaderMode)mode;
+- (void)openEditor;
 
 - (void)refreshAd;
 
@@ -44,8 +44,6 @@ namespace search { struct AddressInfo; }
 @property (nonatomic) MTRGNativeAppwallAd * appWallAd;
 @property (nonatomic, readonly) BOOL isAppWallAdActive;
 
-@property (nonatomic) UIPopoverController * popoverVC;
-@property (nonatomic) ShareActionSheet * shareActionSheet;
 @property (nonatomic, readonly) MWMMapViewControlsManager * controlsManager;
 @property (nonatomic) m2::PointD restoreRouteDestination;
 @property (nonatomic) MWMAPIBar * apiBar;

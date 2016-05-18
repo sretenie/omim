@@ -8,8 +8,10 @@
 + (UIColor *)downloadBadgeBackground;
 + (UIColor *)pressBackground;
 + (UIColor *)red;
++ (UIColor *)errorPink;
 + (UIColor *)orange;
 + (UIColor *)linkBlue;
++ (UIColor *)linkBlueHighlighted;
 + (UIColor *)linkBlueDark;
 + (UIColor *)blackPrimaryText;
 + (UIColor *)blackSecondaryText;
@@ -19,8 +21,8 @@
 + (UIColor *)white;
 + (UIColor *)whitePrimaryText;
 + (UIColor *)whiteSecondaryText;
++ (UIColor *)whiteHintText;
 + (UIColor *)whiteDividers;
-+ (UIColor *)buttonEnabledBlueText;
 + (UIColor *)buttonDisabledBlueText;
 + (UIColor *)buttonHighlightedBlueText;
 + (UIColor *)alertBackground;

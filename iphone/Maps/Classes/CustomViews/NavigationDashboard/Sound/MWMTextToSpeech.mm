@@ -3,12 +3,16 @@
 #import "Statistics.h"
 #import <AVFoundation/AVFoundation.h>
 
+#include "LocaleTranslator.h"
+
 #include "Framework.h"
 #include "sound/tts/languages.hpp"
 
 extern NSString * const kUserDefaultsTTSLanguageBcp47 = @"UserDefaultsTTSLanguageBcp47";
 extern NSString * const kUserDafaultsNeedToEnableTTS = @"UserDefaultsNeedToEnableTTS";
 static NSString * const DEFAULT_LANG = @"en-US";
+
+using namespace locale_translator;
 
 @interface MWMTextToSpeech()
 {
@@ -50,7 +54,7 @@ static NSString * const DEFAULT_LANG = @"en-US";
 
     pair<string, string> const lan =
         make_pair([preferedLanguageBcp47 UTF8String],
-                  tts::translatedTwine(tts::bcp47ToTwineLanguage(preferedLanguageBcp47)));
+                  tts::translatedTwine(bcp47ToTwineLanguage(preferedLanguageBcp47)));
 
     if (find(_availableLanguages.begin(), _availableLanguages.end(), lan) != _availableLanguages.end())
       [self setNotificationsLocale:preferedLanguageBcp47];
@@ -84,7 +88,7 @@ static NSString * const DEFAULT_LANG = @"en-US";
 
 - (void)setNotificationsLocale:(NSString *)locale
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatTTSSettings, kStatChangeLanguage)
+  [Statistics logEvent:kStatEventName(kStatTTSSettings, kStatChangeLanguage)
                    withParameters:@{kStatValue : locale}];
   NSUserDefaults * ud = [NSUserDefaults standardUserDefaults];
   [ud setObject:locale forKey:kUserDefaultsTTSLanguageBcp47];
@@ -146,40 +150,46 @@ static NSString * const DEFAULT_LANG = @"en-US";
 
 - (void)createVoice:(NSString *)locale
 {
-  if (!locale)
+  NSMutableArray<NSString *> * candidateLocales = [@[DEFAULT_LANG, @"en-GB"] mutableCopy];
+
+  if (locale)
+    [candidateLocales insertObject:locale atIndex:0];
+  else
+    LOG(LWARNING, ("locale is nil. Trying default locale."));
+
+  NSArray<AVSpeechSynthesisVoice *> * availTTSVoices = [AVSpeechSynthesisVoice speechVoices];
+  AVSpeechSynthesisVoice * voice = nil;
+  for (NSString * loc in candidateLocales)
   {
-    LOG(LERROR, ("locale is nil. Trying default locale."));
-    locale = DEFAULT_LANG;
-  }
-  
-  NSArray * availTTSLangs = [AVSpeechSynthesisVoice speechVoices];
-  
-  if (!availTTSLangs)
-  {
-    LOG(LERROR, ("No languages for TTS. MWMTextFoSpeech is invalid."));
-    return; // self is not valid.
-  }
-  
-  AVSpeechSynthesisVoice * voice = [AVSpeechSynthesisVoice voiceWithLanguage:locale];
-  if (!voice || ![availTTSLangs containsObject:voice])
-  {
-    locale = DEFAULT_LANG;
-    AVSpeechSynthesisVoice * voice = [AVSpeechSynthesisVoice voiceWithLanguage:locale];
-    if (!voice || ![availTTSLangs containsObject:voice])
+    if (!(isIOS7 || isIOS8) && [loc isEqualToString:@"en-US"])
+      voice = [AVSpeechSynthesisVoice voiceWithLanguage:AVSpeechSynthesisVoiceIdentifierAlex];
+    if (voice)
+      break;
+    for (AVSpeechSynthesisVoice * ttsVoice in availTTSVoices)
     {
-      LOG(LERROR, ("The UI language and English are not available for TTS. MWMTestToSpeech is invalid."));
-      return; // self is not valid.
+      if ([ttsVoice.language isEqualToString:loc])
+      {
+        voice = [AVSpeechSynthesisVoice voiceWithLanguage:loc];
+        break;
+      }
     }
+    if (voice)
+      break;
   }
-  
-  self.speechVoice = [AVSpeechSynthesisVoice voiceWithLanguage:locale];
-  string const twineLang = tts::bcp47ToTwineLanguage(locale);
-  if (twineLang.empty())
+
+  self.speechVoice = voice;
+  if (voice)
   {
-    LOG(LERROR, ("Cannot convert UI locale or default locale to twine language. MWMTestToSpeech is invalid."));
-    return; // self is not valid.
+    string const twineLang = bcp47ToTwineLanguage(voice.language);
+    if (twineLang.empty())
+      LOG(LERROR, ("Cannot convert UI locale or default locale to twine language. MWMTextToSpeech is invalid."));
+    else
+      GetFramework().SetTurnNotificationsLocale(twineLang);
   }
-  GetFramework().SetTurnNotificationsLocale(twineLang);
+  else
+  {
+    LOG(LERROR, ("The UI language and English are not available for TTS. MWMTextToSpeech is invalid."));
+  }
 }
 
 - (void)speakOneString:(NSString *)textToSpeak
@@ -215,7 +225,7 @@ static vector<pair<string, string>> availableLanguages()
   NSArray<AVSpeechSynthesisVoice *> * voices = [AVSpeechSynthesisVoice speechVoices];
   vector<pair<string, string>> native(voices.count);
   for (AVSpeechSynthesisVoice * v in voices)
-    native.emplace_back(make_pair(tts::bcp47ToTwineLanguage(v.language), [v.language UTF8String]));
+    native.emplace_back(make_pair(bcp47ToTwineLanguage(v.language), [v.language UTF8String]));
 
   using namespace routing::turns::sound;
   vector<pair<string, string>> result;
@@ -236,39 +246,21 @@ static vector<pair<string, string>> availableLanguages()
 
 @end
 
+
 namespace tts
 {
-
-string bcp47ToTwineLanguage(NSString const * bcp47LangName)
-{
-  if (bcp47LangName == nil || [bcp47LangName length] < 2)
-    return string("");
-
-  if ([bcp47LangName isEqualToString:@"zh-CN"] || [bcp47LangName isEqualToString:@"zh-CHS"]
-      || [bcp47LangName isEqualToString:@"zh-SG"])
-  {
-    return string("zh-Hans"); // Chinese simplified
-  }
-
-  if ([bcp47LangName hasPrefix:@"zh"])
-    return string("zh-Hant"); // Chinese traditional
-
-  // Taking two first symbols of a language name. For example ru-RU -> ru
-  return [[bcp47LangName substringToIndex:2] UTF8String];
-}
 
 string translatedTwine(string const & twine)
 {
   auto const & list = routing::turns::sound::kLanguageList;
   auto const it = find_if(list.begin(), list.end(), [&twine](pair<string, string> const & pair)
-  {
-    return pair.first == twine;
-  });
+                          {
+                            return pair.first == twine;
+                          });
   
   if (it != list.end())
     return it->second;
   else
     return "";
 }
-
 } // namespace tts

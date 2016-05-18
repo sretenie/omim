@@ -15,15 +15,9 @@
 @end
 
 @interface LocationManager : NSObject <CLLocationManagerDelegate>
-{
-  CLLocationManager * m_locationManager;
-  BOOL m_isStarted;
-  NSMutableSet * m_observers;
-  NSDate * m_lastLocationTime;
-  BOOL m_isCourse;
-}
 
-@property (nonatomic, readonly) BOOL isDaemonMode;
+@property (nonatomic, readonly) BOOL isStarted;
+@property (nonatomic, readonly) location::TLocationError lastLocationError;
 
 - (void)start:(id <LocationObserver>)observer;
 - (void)stop:(id <LocationObserver>)observer;
@@ -40,13 +34,17 @@
 - (NSString *)formattedSpeedAndAltitude:(BOOL &)hasSpeed;
 
 - (bool)lastLocationIsValid;
+- (bool)isLocationPendingOrNoPosition;
 - (BOOL)enabledOnMap;
-- (void)triggerCompass;
 
 - (void)onDaemonMode;
 - (void)onForeground;
 - (void)onBackground;
 - (void)beforeTerminate;
+
+- (void)reset;
+
+- (void)processMyPositionStateModeEvent:(location::EMyPositionMode)mode;
 
 @end
 
@@ -55,6 +53,11 @@
 - (m2::PointD)mercator;
 
 @end
+
+static inline ms::LatLon ToLatLon(m2::PointD const & p)
+{
+  return MercatorBounds::ToLatLon(p);
+}
 
 static inline m2::PointD ToMercator(CLLocationCoordinate2D const & l)
 {

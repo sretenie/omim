@@ -6,7 +6,9 @@ import android.view.View;
 import android.widget.ImageView;
 
 import com.mapswithme.maps.LocationState;
+import com.mapswithme.maps.MwmActivity;
 import com.mapswithme.maps.R;
+import com.mapswithme.maps.location.LocationHelper;
 import com.mapswithme.util.Graphics;
 import com.mapswithme.util.ThemeUtils;
 import com.mapswithme.util.statistics.AlohaHelper;
@@ -26,7 +28,13 @@ public class MyPositionButton
       {
         Statistics.INSTANCE.trackEvent(Statistics.EventName.TOOLBAR_MY_POSITION);
         AlohaHelper.logClick(AlohaHelper.TOOLBAR_MY_POSITION);
-        LocationState.INSTANCE.switchToNextMode();
+        if (!LocationState.isTurnedOn())
+        {
+          MwmActivity.enableLocation();
+          LocationHelper.INSTANCE.setShouldResolveErrors(true);
+          LocationHelper.INSTANCE.restart(); // restart to check location settings again.
+        }
+        LocationState.INSTANCE.nativeSwitchToNextMode();
       }
     });
   }
@@ -37,10 +45,11 @@ public class MyPositionButton
     Drawable image;
     switch (state)
     {
-    case LocationState.UNKNOWN_POSITION:
-      image = Graphics.tint(mButton.getContext(), R.drawable.ic_follow, R.attr.iconTintLight);
+    case LocationState.PENDING_POSITION:
+      image = mButton.getResources().getDrawable(ThemeUtils.getResource(mButton.getContext(), R.attr.myPositionButtonAnimation));
       break;
 
+    case LocationState.NOT_FOLLOW_NO_POSITION:
     case LocationState.NOT_FOLLOW:
       image = Graphics.tint(mButton.getContext(), R.drawable.ic_not_follow);
       break;
@@ -49,12 +58,8 @@ public class MyPositionButton
       image = Graphics.tint(mButton.getContext(), R.drawable.ic_follow, R.attr.colorAccent);
       break;
 
-    case LocationState.ROTATE_AND_FOLLOW:
+    case LocationState.FOLLOW_AND_ROTATE:
       image = Graphics.tint(mButton.getContext(), R.drawable.ic_follow_and_rotate, R.attr.colorAccent);
-      break;
-
-    case LocationState.PENDING_POSITION:
-      image = mButton.getResources().getDrawable(ThemeUtils.getResource(mButton.getContext(), R.attr.myPositionButtonAnimation));
       break;
 
     default:

@@ -1,10 +1,11 @@
-#include "base/string_utils.hpp"
 #include "base/assert.hpp"
+#include "base/string_utils.hpp"
 
-#include "std/target_os.hpp"
-#include "std/iterator.hpp"
+#include "std/algorithm.hpp"
 #include "std/cmath.hpp"
 #include "std/iomanip.hpp"
+#include "std/iterator.hpp"
+#include "std/target_os.hpp"
 
 #include <boost/algorithm/string/trim.hpp>
 
@@ -45,7 +46,7 @@ bool to_int(char const * s, int & i, int base /*= 10*/)
 {
   char * stop;
   long const x = strtol(s, &stop, base);
-  if (stop && *stop == 0)
+  if (*stop == 0)
   {
     i = static_cast<int>(x);
     ASSERT_EQUAL(static_cast<long>(i), x, ());
@@ -62,7 +63,7 @@ bool to_uint64(char const * s, uint64_t & i)
 #else
   i = strtoull(s, &stop, 10);
 #endif
-  return stop && *stop == 0;
+  return *stop == 0;
 }
 
 bool to_int64(char const * s, int64_t & i)
@@ -73,14 +74,14 @@ bool to_int64(char const * s, int64_t & i)
 #else
   i = strtoll(s, &stop, 10);
 #endif
-  return stop && *stop == 0;
+  return *stop == 0;
 }
 
 bool to_double(char const * s, double & d)
 {
   char * stop;
   d = strtod(s, &stop);
-  return stop && *stop == 0 && s != stop;
+  return *stop == 0 && s != stop && isfinite(d);
 }
 
 UniString MakeLowerCase(UniString const & s)
@@ -111,6 +112,56 @@ UniString Normalize(UniString const & s)
   UniString result(s);
   NormalizeInplace(result);
   return result;
+}
+
+void NormalizeDigits(string & utf8)
+{
+  size_t const n = utf8.size();
+  size_t const m = n >= 2 ? n - 2 : 0;
+
+  size_t i = 0;
+  while (i < n && utf8[i] != '\xEF')
+    ++i;
+  size_t j = i;
+
+  // Following invariant holds before/between/after loop iterations below:
+  // * utf8[0, i) represents a checked part of the input string.
+  // * utf8[0, j) represents a normalized version of the utf8[0, i).
+  while (i < m)
+  {
+    if (utf8[i] == '\xEF' && utf8[i + 1] == '\xBC')
+    {
+      auto const n = utf8[i + 2];
+      if (n >= '\x90' && n <= '\x99')
+      {
+        utf8[j++] = n - 0x90 + '0';
+        i += 3;
+      }
+      else
+      {
+        utf8[j++] = utf8[i++];
+        utf8[j++] = utf8[i++];
+      }
+    }
+    else
+    {
+      utf8[j++] = utf8[i++];
+    }
+  }
+  while (i < n)
+    utf8[j++] = utf8[i++];
+  utf8.resize(j);
+}
+
+void NormalizeDigits(UniString & us)
+{
+  size_t const size = us.size();
+  for (size_t i = 0; i < size; ++i)
+  {
+    UniChar const c = us[i];
+    if (c >= 0xFF10 /* '０' */ && c <= 0xFF19 /* '９' */)
+      us[i] = c - 0xFF10 + '0';
+  }
 }
 
 namespace
@@ -169,6 +220,10 @@ bool IsASCIIString(string const & str)
   return true;
 }
 
+bool IsASCIIDigit(UniChar c) { return c >= '0' && c <= '9'; }
+
+bool IsASCIILatin(UniChar c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+
 bool StartsWith(UniString const & s, UniString const & p)
 {
   if (p.size() > s.size())
@@ -193,6 +248,11 @@ bool EndsWith(string const & s1, char const * s2)
   if (n < m)
     return false;
   return (s1.compare(n - m, m, s2) == 0);
+}
+
+bool EndsWith(string const & s1, string const & s2)
+{
+  return s1.size() >= s2.size() && s1.compare(s1.size() - s2.size(), s2.size(), s2) == 0;
 }
 
 string to_string_dac(double d, int dac)
@@ -255,7 +315,8 @@ bool AlmostEqual(string const & str1, string const & str2, size_t mismatchedCoun
 
   for (size_t i = 0; i <= mismatchedCount; ++i)
   {
-    mis = mismatch(mis.first, str1End, mis.second);
+    auto const end = mis.first + min(distance(mis.first, str1End), distance(mis.second, str2End));
+    mis = mismatch(mis.first, end, mis.second);
     if (mis.first == str1End && mis.second == str2End)
       return true;
     if (mis.first != str1End)

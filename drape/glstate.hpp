@@ -38,7 +38,6 @@ public:
   {
     /// Do not change order
     GeometryLayer,
-    DynamicGeometry,
     OverlayLayer,
     UserMarkLayer,
     Gui
@@ -70,6 +69,7 @@ public:
 
   bool operator<(GLState const & other) const;
   bool operator==(GLState const & other) const;
+  bool operator!=(GLState const & other) const;
 
 private:
   uint32_t m_gpuProgramIndex;

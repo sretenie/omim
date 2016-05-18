@@ -165,6 +165,10 @@ UNIT_TEST(to_double)
 
   s = "123.456 we don't parse it.";
   TEST(!strings::to_double(s, d), ());
+
+  TEST(!strings::to_double("INF", d), ());
+  TEST(!strings::to_double("NAN", d), ());
+  TEST(!strings::to_double("1.18973e+4932", d), ());
 }
 
 UNIT_TEST(to_int)
@@ -249,6 +253,9 @@ UNIT_TEST(to_string)
 
   TEST_EQUAL(strings::to_string(123456789123456789ULL), "123456789123456789", ());
   TEST_EQUAL(strings::to_string(-987654321987654321LL), "-987654321987654321", ());
+
+  uint64_t const n = numeric_limits<uint64_t>::max();
+  TEST_EQUAL(strings::to_string(n), "18446744073709551615", ());
 }
 
 UNIT_TEST(to_string_dac)
@@ -348,6 +355,12 @@ UNIT_TEST(SimpleTokenizer)
     char const * s[] = {"1", "2"};
     tokens.assign(&s[0], &s[0] + ARRAY_SIZE(s));
     TestIter("/1/2/", "/", tokens);
+  }
+  {
+    using strings::SimpleTokenizer;
+    string const str("a,b,c");
+    TEST_EQUAL(vector<string>(SimpleTokenizer(str, ","), SimpleTokenizer()),
+               (vector<string>{"a", "b", "c"}), ());
   }
 }
 
@@ -569,6 +582,11 @@ UNIT_TEST(AlmostEqual)
   TEST(!AlmostEqual("MKAD, 600 km", "MKAD, 599 km", 2), ());
   TEST(!AlmostEqual("MKAD, 45-y kilometre", "MKAD, 46", 2), ());
   TEST(!AlmostEqual("ул. Героев Панфиловцев", "ул. Планерная", 2), ());
+
+  string small(10, '\0');
+  string large(1000, '\0');
+  TEST(AlmostEqual(small, large, large.length()), ());
+  TEST(AlmostEqual(large, small, large.length()), ());
 }
 
 UNIT_TEST(EditDistance)
@@ -598,4 +616,31 @@ UNIT_TEST(EditDistance)
 
   testUniStringEditDistance("ll", "l1", 1);
   testUniStringEditDistance("\u0132ij", "\u0133IJ", 3);
+}
+
+UNIT_TEST(NormalizeDigits)
+{
+  auto const nd = [](string str) -> string
+  {
+    strings::NormalizeDigits(str);
+    return str;
+  };
+  TEST_EQUAL(nd(""), "", ());
+  TEST_EQUAL(nd("z12345／／"), "z12345／／", ());
+  TEST_EQUAL(nd("a０１9２ "), "a0192 ", ());
+  TEST_EQUAL(nd("３４５６７８９"), "3456789", ());
+}
+
+UNIT_TEST(NormalizeDigits_UniString)
+{
+  auto const nd = [](string const & utf8) -> string
+  {
+    strings::UniString us = strings::MakeUniString(utf8);
+    strings::NormalizeDigits(us);
+    return strings::ToUtf8(us);
+  };
+  TEST_EQUAL(nd(""), "", ());
+  TEST_EQUAL(nd("z12345／／"), "z12345／／", ());
+  TEST_EQUAL(nd("a０１9２ "), "a0192 ", ());
+  TEST_EQUAL(nd("３４５６７８９"), "3456789", ());
 }

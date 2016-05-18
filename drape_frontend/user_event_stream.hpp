@@ -2,8 +2,6 @@
 
 #include "drape_frontend/kinetic_scroller.hpp"
 #include "drape_frontend/navigator.hpp"
-#include "drape_frontend/animation/model_view_animation.hpp"
-#include "drape_frontend/animation/perspective_animation.hpp"
 
 #include "drape/pointers.hpp"
 
@@ -21,6 +19,8 @@
 
 namespace df
 {
+
+int const kDoNotChangeZoom = -1;
 
 struct Touch
 {
@@ -257,12 +257,15 @@ public:
     virtual void CorrectScalePoint(m2::PointD & pt1, m2::PointD & pt2) const = 0;
     virtual void OnScaleEnded() = 0;
 
-    virtual void OnAnimationStarted(ref_ptr<BaseModelViewAnimation> anim) = 0;
+    virtual void OnAnimationStarted(ref_ptr<Animation> anim) = 0;
+    virtual void OnPerspectiveSwitchRejected() = 0;
+
+    virtual void OnTouchMapAction() = 0;
   };
 
-  UserEventStream(TIsCountryLoaded const & fn);
+  UserEventStream();
   void AddEvent(UserEvent const & event);
-  ScreenBase const & ProcessEvents(bool & modelViewChange, bool & viewportChanged);
+  ScreenBase const & ProcessEvents(bool & modelViewChanged, bool & viewportChanged);
   ScreenBase const & GetCurrentScreen() const;
 
   m2::AnyRectD GetTargetRect() const;
@@ -273,6 +276,8 @@ public:
   static bool IsScaleAllowableIn3d(int scale);
 
   void SetListener(ref_ptr<Listener> listener) { m_listener = listener; }
+
+  void SetKineticScrollEnabled(bool enabled);
 
 #ifdef DEBUG
   static char const * BEGIN_DRAG;
@@ -289,23 +294,25 @@ public:
   static char const * END_FILTER;
   static char const * CANCEL_FILTER;
   static char const * TWO_FINGERS_TAP;
+  static char const * BEGIN_DOUBLE_TAP_AND_HOLD;
+  static char const * DOUBLE_TAP_AND_HOLD;
+  static char const * END_DOUBLE_TAP_AND_HOLD;
 
   using TTestBridge = function<void (char const * action)>;
   void SetTestBridge(TTestBridge const & fn) { m_testFn = fn; }
 #endif
 
 private:
-  using TAnimationCreator = function<void(m2::AnyRectD const &, m2::AnyRectD const &, double, double, double)>;
   bool SetScale(m2::PointD const & pxScaleCenter, double factor, bool isAnim);
   bool SetCenter(m2::PointD const & center, int zoom, bool isAnim);
   bool SetRect(m2::RectD rect, int zoom, bool applyRotation, bool isAnim);
   bool SetRect(m2::AnyRectD const & rect, bool isAnim);
-  bool SetRect(m2::AnyRectD const & rect, bool isAnim, TAnimationCreator const & animCreator);
   bool SetFollowAndRotate(m2::PointD const & userPos, m2::PointD const & pixelPos,
                           double azimuth, int preferredZoomLevel, bool isAnim);
 
   bool FilterEventWhile3dAnimation(UserEvent::EEventType type) const;
-  void SetEnable3dMode(double maxRotationAngle, double angleFOV, bool isAnim, bool & viewportChanged);
+  void SetEnable3dMode(double maxRotationAngle, double angleFOV,
+                       bool isAnim, bool immediatelyStart);
   void SetDisable3dModeAnimation();
 
   m2::AnyRectD GetCurrentRect() const;
@@ -331,9 +338,14 @@ private:
   void DetectShortTap(Touch const & touch);
   void DetectLongTap(Touch const & touch);
   bool DetectDoubleTap(Touch const & touch);
+  void PerformDoubleTap(Touch const & touch);
   bool DetectForceTap(Touch const & touch);
   void EndTapDetector(Touch const & touch);
   void CancelTapDetector();
+  
+  void StartDoubleTapAndHold(Touch const & touch);
+  void UpdateDoubleTapAndHold(Touch const & touch);
+  void EndDoubleTapAndHold(Touch const & touch);
 
   void BeginTwoFingersTap(Touch const & t1, Touch const & t2);
   void EndTwoFingersTap();
@@ -342,10 +354,11 @@ private:
   void EndFilter(Touch const & t);
   void CancelFilter(Touch const & t);
 
-  void ResetCurrentAnimation(bool finishAnimation = false);
-
-private:
-  TIsCountryLoaded m_isCountryLoaded;
+  void ApplyAnimations();
+  void ResetAnimations(Animation::Type animType, bool finishAll = false);
+  void ResetMapPlaneAnimations();
+  void ResetAnimationsBeforeSwitch3D();
+  bool InterruptFollowAnimations();
 
   list<UserEvent> m_events;
   mutable mutex m_lock;
@@ -359,16 +372,20 @@ private:
     STATE_TAP_DETECTION,
     STATE_WAIT_DOUBLE_TAP,
     STATE_TAP_TWO_FINGERS,
+    STATE_WAIT_DOUBLE_TAP_HOLD,
+    STATE_DOUBLE_TAP_HOLD,
     STATE_DRAG,
     STATE_SCALE
   } m_state;
 
   array<Touch, 2> m_touches;
 
-  drape_ptr<BaseModelViewAnimation> m_animation;
+  AnimationSystem & m_animationSystem;
 
-  unique_ptr<PerspectiveAnimation> m_perspectiveAnimation;
-  bool m_pendingPerspective = false;
+  bool m_modelViewChanged = false;
+  bool m_viewportChanged = false;
+
+  bool m_perspectiveAnimation = false;
   unique_ptr<UserEvent> m_pendingEvent;
   double m_discardedFOV = 0.0;
   double m_discardedAngle = 0.0;
@@ -380,9 +397,11 @@ private:
 #endif
   m2::PointD m_startDragOrg;
   array<m2::PointF, 2> m_twoFingersTouches;
+  m2::PointD m_startDoubleTapAndHold;
 
   KineticScroller m_scroller;
   my::Timer m_kineticTimer;
+  bool m_kineticScrollEnabled = true;
 };
 
 }

@@ -1,10 +1,15 @@
 package com.mapswithme.util;
 
+import android.annotation.SuppressLint;
+import android.content.ContentResolver;
 import android.location.Location;
 import android.os.Build;
 import android.os.SystemClock;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.Surface;
 
+import com.mapswithme.maps.MwmApplication;
 import com.mapswithme.maps.bookmarks.data.MapObject;
 import com.mapswithme.maps.location.LocationHelper;
 
@@ -85,7 +90,7 @@ public class LocationUtils
         // Do compare current and previous system times in case when
         // we have incorrect time settings on a device.
         time = System.currentTimeMillis();
-        lastTime = LocationHelper.INSTANCE.getLastLocationTime();
+        lastTime = LocationHelper.INSTANCE.getSavedLocationTime();
       }
 
       return (time - lastTime) * 1.0E-3;
@@ -105,6 +110,23 @@ public class LocationUtils
   public static boolean areLatLonEqual(MapObject first, MapObject second)
   {
     return Math.abs(first.getLat() - second.getLat()) < LocationUtils.LAT_LON_EPSILON &&
-        Math.abs(first.getLon() - second.getLon()) < LocationUtils.LAT_LON_EPSILON;
+           Math.abs(first.getLon() - second.getLon()) < LocationUtils.LAT_LON_EPSILON;
+  }
+
+  @SuppressLint("InlinedApi")
+  @SuppressWarnings("deprecation")
+  public static boolean areLocationServicesTurnedOn()
+  {
+    final ContentResolver resolver = MwmApplication.get().getContentResolver();
+    try
+    {
+      return Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+             ? !TextUtils.isEmpty(Settings.Secure.getString(resolver, Settings.Secure.LOCATION_PROVIDERS_ALLOWED))
+             : Settings.Secure.getInt(resolver, Settings.Secure.LOCATION_MODE) != Settings.Secure.LOCATION_MODE_OFF;
+    } catch (Settings.SettingNotFoundException e)
+    {
+      e.printStackTrace();
+      return false;
+    }
   }
 }

@@ -9,12 +9,6 @@ namespace df
 
 enum ColorConstant
 {
-  DownloadButton,
-  DownloadButtonRouting,
-  DownloadButtonPressed,
-  DownloadButtonRoutingPressed,
-  DownloadButtonText,
-  CountryStatusText,
   GuiText,
   MyPositionAccuracy,
   Selection,
@@ -24,7 +18,8 @@ enum ColorConstant
   TrackHumanSpeed,
   TrackCarSpeed,
   TrackPlaneSpeed,
-  TrackUnknownDistance
+  TrackUnknownDistance,
+  Arrow3DObsolete
 };
 
 dp::Color GetColorConstant(MapStyle style, ColorConstant constant);

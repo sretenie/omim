@@ -7,11 +7,11 @@
 #include "indexer/ftypes_matcher.hpp"
 #include "indexer/index.hpp"
 #include "indexer/scales.hpp"
-
-#include "platform/platform.hpp"
+#include "indexer/search_string_utils.hpp"
 
 #include "platform/local_country_file.hpp"
 #include "platform/local_country_file_utils.hpp"
+#include "platform/platform.hpp"
 
 #include "geometry/distance_on_sphere.hpp"
 
@@ -57,7 +57,7 @@ class CollectStreetIDs
   static bool GetKey(string const & name, string & key)
   {
     TEST(!name.empty(), ());
-    search::GetStreetNameAsKey(name, key);
+    key = strings::ToUtf8(search::GetStreetNameAsKey(name));
 
     if (key.empty())
     {
@@ -331,19 +331,15 @@ UNIT_TEST(HS_StreetsCompare)
 
 namespace
 {
-
 string GetStreetKey(string const & name)
 {
-  string res;
-  search::GetStreetNameAsKey(name, res);
-  return res;
+  return strings::ToUtf8(search::GetStreetNameAsKey(name));
 }
-
-}
+} // namespace
 
 UNIT_TEST(HS_StreetKey)
 {
-  TEST_EQUAL("крупской", GetStreetKey("улица Крупской"), ());
+  TEST_EQUAL("крупскои", GetStreetKey("улица Крупской"), ());
   TEST_EQUAL("уручская", GetStreetKey("Уручская ул."), ());
   TEST_EQUAL("газетыправда", GetStreetKey("Пр. Газеты Правда"), ());
   TEST_EQUAL("якупалы", GetStreetKey("улица Я. Купалы"), ());
