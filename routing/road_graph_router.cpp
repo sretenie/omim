@@ -1,3 +1,4 @@
+#include "routing/bicycle_model.hpp"
 #include "routing/features_road_graph.hpp"
 #include "routing/nearest_edge_finder.hpp"
 #include "routing/pedestrian_directions.hpp"
@@ -70,7 +71,7 @@ bool CheckMwmVersion(vector<pair<Edge, m2::PointD>> const & vicinities, vector<s
 
     version::MwmVersion version;
     version::ReadVersion(src, version);
-    if (version.timestamp < kMinPedestrianMwmVersion)
+    if (version.GetVersion() < kMinPedestrianMwmVersion)
       mwmNames.push_back(mwmInfo->GetCountryName());
   }
   return !mwmNames.empty();
@@ -177,7 +178,7 @@ IRouter::ResultCode RoadGraphRouter::CalculateRoute(m2::PointD const & startPoin
 
   vector<pair<Edge, m2::PointD>> finalVicinity;
   FindClosestEdges(*m_roadGraph, finalPoint, finalVicinity);
-  
+
   if (finalVicinity.empty())
     return EndPointNotFound;
 
@@ -212,16 +213,17 @@ IRouter::ResultCode RoadGraphRouter::CalculateRoute(m2::PointD const & startPoin
   m_roadGraph->AddFakeEdges(startPos, startVicinity);
   m_roadGraph->AddFakeEdges(finalPos, finalVicinity);
 
-  vector<Junction> path;
+  RoutingResult<Junction> result;
   IRoutingAlgorithm::Result const resultCode =
-      m_algorithm->CalculateRoute(*m_roadGraph, startPos, finalPos, delegate, path);
+      m_algorithm->CalculateRoute(*m_roadGraph, startPos, finalPos, delegate, result);
 
   if (resultCode == IRoutingAlgorithm::Result::OK)
   {
-    ASSERT(!path.empty(), ());
-    ASSERT_EQUAL(path.front(), startPos, ());
-    ASSERT_EQUAL(path.back(), finalPos, ());
-    ReconstructRoute(move(path), route, delegate);
+    ASSERT(!result.path.empty(), ());
+    ASSERT_EQUAL(result.path.front(), startPos, ());
+    ASSERT_EQUAL(result.path.back(), finalPos, ());
+    ASSERT_GREATER(result.distance, 0., ());
+    ReconstructRoute(move(result.path), route, delegate);
   }
 
   m_roadGraph->ResetFakes();
@@ -250,12 +252,14 @@ void RoadGraphRouter::ReconstructRoute(vector<Junction> && path, Route & route,
 
   Route::TTimes times;
   Route::TTurns turnsDir;
+  Route::TStreets streetNames;
   if (m_directionsEngine)
     m_directionsEngine->Generate(*m_roadGraph, path, times, turnsDir, cancellable);
 
   route.SetGeometry(geometry.begin(), geometry.end());
   route.SetSectionTimes(times);
   route.SetTurnInstructions(turnsDir);
+  route.SetStreetNames(streetNames);
 }
 
 unique_ptr<IRouter> CreatePedestrianAStarRouter(Index & index, TCountryFileFn const & countryFileFn)
@@ -273,6 +277,16 @@ unique_ptr<IRouter> CreatePedestrianAStarBidirectionalRouter(Index & index, TCou
   unique_ptr<IRoutingAlgorithm> algorithm(new AStarBidirectionalRoutingAlgorithm());
   unique_ptr<IDirectionsEngine> directionsEngine(new PedestrianDirectionsEngine());
   unique_ptr<IRouter> router(new RoadGraphRouter("astar-bidirectional-pedestrian", index, countryFileFn, move(vehicleModelFactory), move(algorithm), move(directionsEngine)));
+  return router;
+}
+
+unique_ptr<IRouter> CreateBicycleAStarBidirectionalRouter(Index & index, TCountryFileFn const & countryFileFn)
+{
+  unique_ptr<IVehicleModelFactory> vehicleModelFactory(new BicycleModelFactory());
+  unique_ptr<IRoutingAlgorithm> algorithm(new AStarBidirectionalRoutingAlgorithm());
+  unique_ptr<IDirectionsEngine> directionsEngine(new PedestrianDirectionsEngine());
+  unique_ptr<IRouter> router(new RoadGraphRouter("astar-bidirectional-bicycle", index, countryFileFn, move(vehicleModelFactory),
+                                                 move(algorithm), move(directionsEngine)));
   return router;
 }
 

@@ -1,7 +1,6 @@
 #import "Common.h"
 #import "Macros.h"
 #import "MapsAppDelegate.h"
-#import "MWMCircularProgress.h"
 #import "MWMLanesPanel.h"
 #import "MWMNavigationDashboard.h"
 #import "MWMNavigationDashboardEntity.h"
@@ -11,7 +10,6 @@
 #import "MWMRoutePreview.h"
 #import "MWMTextToSpeech.h"
 #import "Statistics.h"
-#import "UIButton+Coloring.h"
 
 static NSString * const kRoutePreviewXibName = @"MWMRoutePreview";
 static NSString * const kRoutePreviewIPADXibName = @"MWMiPadRoutePreview";
@@ -20,7 +18,7 @@ static NSString * const kNavigationDashboardLandscapeXibName = @"MWMLandscapeNav
 static NSString * const kNavigationDashboardIPADXibName = @"MWMNiPadNavigationDashboard";
 extern NSString * const kTTSStatusWasChangedNotification;
 
-@interface MWMNavigationDashboardManager () <MWMCircularProgressProtocol>
+@interface MWMNavigationDashboardManager ()
 
 @property (nonatomic) IBOutlet MWMRoutePreview * iPhoneRoutePreview;
 @property (nonatomic) IBOutlet MWMRoutePreview * iPadRoutePreview;
@@ -63,7 +61,6 @@ extern NSString * const kTTSStatusWasChangedNotification;
     }
 
     _routePreview.dashboardManager = self;
-    _routePreview.pedestrianProgressView.delegate = _routePreview.vehicleProgressView.delegate = self;
     _routePreview.delegate = delegate;
     _routePreview.dataSource = delegate;
     if (IPAD)
@@ -164,7 +161,6 @@ extern NSString * const kTTSStatusWasChangedNotification;
 {
   [self.routePreview stateError];
   self.activeRouteTypeButton.state = MWMCircularProgressStateFailed;
-  [self.activeRouteTypeButton stopSpinner];
 }
 
 - (void)updateDashboard
@@ -236,7 +232,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
 
 - (void)progressButtonPressed:(nonnull MWMCircularProgress *)progress
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatNavigationDashboard, kStatButton)
+  [Statistics logEvent:kStatEventName(kStatNavigationDashboard, kStatButton)
                    withParameters:@{kStatValue : kStatProgress}];
   MWMCircularProgressState const s = progress.state;
   if (s == MWMCircularProgressStateSelected || s == MWMCircularProgressStateCompleted)
@@ -244,20 +240,20 @@ extern NSString * const kTTSStatusWasChangedNotification;
   self.activeRouteTypeButton = progress;
   auto & f = GetFramework();
   routing::RouterType type;
-  if ([progress isEqual:self.routePreview.pedestrianProgressView])
+  if ([progress isEqual:self.routePreview.pedestrianProgress])
   {
-    [[Statistics instance]
+    [Statistics
               logEvent:kStatPointToPoint
         withParameters:@{kStatAction : kStatChangeRoutingMode, kStatValue : kStatPedestrian}];
-    [self.routePreview.vehicleProgressView stopSpinner];
+    self.routePreview.vehicleProgress.state = MWMCircularProgressStateNormal;
     type = routing::RouterType::Pedestrian;
   }
   else
   {
-    [[Statistics instance]
+    [Statistics
               logEvent:kStatPointToPoint
         withParameters:@{kStatAction : kStatChangeRoutingMode, kStatValue : kStatVehicle}];
-    [self.routePreview.pedestrianProgressView stopSpinner];
+    self.routePreview.pedestrianProgress.state = MWMCircularProgressStateNormal;
     type = routing::RouterType::Vehicle;
   }
   f.CloseRouting();
@@ -266,13 +262,13 @@ extern NSString * const kTTSStatusWasChangedNotification;
   [self.routePreview selectProgress:progress];
   if (!self.delegate.isPossibleToBuildRoute)
     return;
-  [progress startSpinner];
+  progress.state = MWMCircularProgressStateSpinner;
   [self.delegate buildRoute];
 }
 
 #pragma mark - MWMRoutePreview
 
-- (void)setRouteBuildingProgress:(CGFloat)progress
+- (void)setRouteBuilderProgress:(CGFloat)progress
 {
   [self.activeRouteTypeButton setProgress:progress / 100.];
 }
@@ -281,7 +277,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
 
 - (IBAction)navigationCancelPressed:(UIButton *)sender
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatNavigationDashboard, kStatClose)];
+  [Statistics logEvent:kStatEventName(kStatNavigationDashboard, kStatClose)];
   if (IPAD && self.state != MWMNavigationDashboardStateNavigation)
     [self.delegate routePreviewDidChangeFrame:{}];
   [self removePanel:self.nextTurnPanel];
@@ -293,7 +289,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
 - (IBAction)soundTap:(UIButton *)sender
 {
   BOOL const isEnable = !sender.selected;
-  [[Statistics instance] logEvent:kStatEventName(kStatNavigationDashboard, isEnable ? kStatOn : kStatOff)];
+  [Statistics logEvent:kStatEventName(kStatNavigationDashboard, isEnable ? kStatOn : kStatOff)];
   MWMTextToSpeech * tts = [MWMTextToSpeech tts];
   if (isEnable)
     [tts enable];
@@ -307,7 +303,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
 
 - (IBAction)navigationGoPressed:(UIButton *)sender
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatNavigationDashboard, kStatGo)];
+  [Statistics logEvent:kStatEventName(kStatNavigationDashboard, kStatGo)];
   if ([self.delegate didStartFollowing])
     self.state = MWMNavigationDashboardStateNavigation;
 }
@@ -337,7 +333,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
   [self removePanel:self.nextTurnPanel];
 //  [self removePanel:self.lanesPanel];
   [self setupActualRoute];
-  [self.activeRouteTypeButton startSpinner];
+  self.activeRouteTypeButton.state = MWMCircularProgressStateSpinner;
 }
 
 - (void)showStateReady
@@ -366,20 +362,20 @@ extern NSString * const kTTSStatusWasChangedNotification;
   switch (GetFramework().GetRouter())
   {
   case routing::RouterType::Pedestrian:
-    self.activeRouteTypeButton = self.routePreview.pedestrianProgressView;
+    self.activeRouteTypeButton = self.routePreview.pedestrianProgress;
     break;
   case routing::RouterType::Vehicle:
-    self.activeRouteTypeButton = self.routePreview.vehicleProgressView;
+    self.activeRouteTypeButton = self.routePreview.vehicleProgress;
     break;
   }
   [self.routePreview selectProgress:self.activeRouteTypeButton];
 }
 
-- (void)refresh
+- (void)mwm_refreshUI
 {
-  [self.navigationDashboardLandscape refresh];
-  [self.navigationDashboardPortrait refresh];
-  [self.routePreview refresh];
+  [self.navigationDashboardLandscape mwm_refreshUI];
+  [self.navigationDashboardPortrait mwm_refreshUI];
+  [self.routePreview mwm_refreshUI];
 }
 
 #pragma mark - Properties
@@ -482,7 +478,7 @@ extern NSString * const kTTSStatusWasChangedNotification;
   if (f.GetRouter() != routing::RouterType::Pedestrian)
     return;
 
-  CLLocation * location = [MapsAppDelegate theApp].m_locationManager.lastLocation;
+  CLLocation * location = [MapsAppDelegate theApp].locationManager.lastLocation;
   if (!location)
     return;
 

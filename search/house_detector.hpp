@@ -1,5 +1,5 @@
 #pragma once
-#include "search/indexed_value.hpp"
+#include "search/projection_on_street.hpp"
 
 #include "indexer/feature_decl.hpp"
 #include "indexer/index.hpp"
@@ -13,9 +13,6 @@
 
 namespace search
 {
-
-void GetStreetNameAsKey(string const & name, string & res);
-
 
 class FeatureLoader
 {
@@ -74,15 +71,14 @@ public:
   bool GetNearbyMatch(ParsedNumber const & number) const;
 };
 
-struct HouseProjection
+// NOTE: DO NOT DELETE instances of this class by a pointer/reference
+// to ProjectionOnStreet, because both classes have non-virtual destructors.
+struct HouseProjection : public ProjectionOnStreet
 {
   House const * m_house;
-  m2::PointD m_proj;
-  double m_distance;
+
   /// Distance in mercator, from street beginning to projection on street
   double m_streetDistance;
-  /// false - to the left, true - to the right from projection segment
-  bool m_projectionSign;
 
   inline bool IsOdd() const { return (m_house->GetIntNumber() % 2 == 1); }
 
@@ -90,7 +86,7 @@ struct HouseProjection
   {
     bool operator() (HouseProjection const * p1, HouseProjection const * p2) const
     {
-      return p1->m_distance < p2->m_distance;
+      return p1->m_distMeters < p2->m_distMeters;
     }
   };
 
@@ -116,15 +112,19 @@ public:
   vector<HouseProjection> m_houses;
   double m_length;      /// Length in mercator
   int m_number;         /// Some ordered number after merging
-  bool m_housesReaded;
+  bool m_housesRead;
 
-  Street() : m_length(0.0), m_number(-1), m_housesReaded(false) {}
+  Street() : m_length(0.0), m_number(-1), m_housesRead(false) {}
 
   void Reverse();
   void SortHousesProjection();
 
   /// Get limit rect for street with ortho offset to the left and right.
   m2::RectD GetLimitRect(double offsetMeters) const;
+
+  double GetLength() const;
+
+  double GetPrefixLength(size_t numSegs) const;
 
   inline static bool IsSameStreets(Street const * s1, Street const * s2)
   {
@@ -145,7 +145,7 @@ public:
 
   string const & GetDbgName() const;
   string const & GetName() const;
-  bool IsHousesReaded() const;
+  bool IsHousesRead() const;
   void FinishReadingHouses();
 
   HouseProjection const * GetHousePivot(bool isOdd, bool & sign) const;
@@ -202,14 +202,14 @@ inline void swap(MergedStreet & s1, MergedStreet & s2)
   s1.Swap(s2);
 }
 
-struct HouseResult : public IndexedValueBase<1>
+struct HouseResult
 {
   House const * m_house;
   MergedStreet const * m_street;
 
-  HouseResult(House const * house, MergedStreet const * street)
-    : m_house(house), m_street(street)
-  {}
+  HouseResult(House const * house, MergedStreet const * street) : m_house(house), m_street(street)
+  {
+  }
 
   inline bool operator<(HouseResult const & a) const { return m_house < a.m_house; }
   inline bool operator==(HouseResult const & a) const { return m_house == a.m_house; }
@@ -244,7 +244,7 @@ class HouseDetector
 
   template <class ProjectionCalcT>
   void ReadHouse(FeatureType const & f, Street * st, ProjectionCalcT & calc);
-  void ReadHouses(Street * st, double offsetMeters);
+  void ReadHouses(Street * st);
 
   void SetMetres2Mercator(double factor);
 

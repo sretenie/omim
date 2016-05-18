@@ -3,20 +3,18 @@
 #include "generator/osm_element.hpp"
 
 #include "indexer/classificator.hpp"
+#include "indexer/feature_impl.hpp"
 #include "indexer/feature_visibility.hpp"
+
 #include "geometry/mercator.hpp"
 
 #include "base/assert.hpp"
 #include "base/string_utils.hpp"
-#include "base/math.hpp"
 
 #include "std/vector.hpp"
 #include "std/bind.hpp"
 #include "std/function.hpp"
 #include "std/initializer_list.hpp"
-
-#include <QtCore/QString>
-
 
 namespace ftype
 {
@@ -148,12 +146,7 @@ namespace ftype
         if (v.empty() || !GetLangByKey(k, lang))
           return false;
 
-        // Unicode Compatibility Decomposition,
-        // followed by Canonical Composition (NFKC).
-        // Needed for better search matching
-        QByteArray const normBytes = QString::fromUtf8(
-              v.c_str()).normalized(QString::NormalizationForm_KC).toUtf8();
-        m_params.AddName(lang, normBytes.constData());
+        m_params.AddName(lang, v);
         k.clear();
         v.clear();
         return false;
@@ -193,7 +186,7 @@ namespace ftype
         {
           for (auto const & rule: rules)
           {
-            if (strcmp(e.key.data(), rule.key) != 0)
+            if (e.key != rule.key)
               continue;
             bool take = false;
             if (rule.value[0] == '*')
@@ -394,8 +387,7 @@ namespace ftype
     bool hasLayer = false;
     char const * layer = nullptr;
 
-    bool isSubwayEntrance = false;
-    bool isSubwayStation = false;
+    bool isSubway = false;
 
     TagProcessor(p).ApplyRules
     ({
@@ -403,20 +395,20 @@ namespace ftype
       { "tunnel", "yes", [&layer] { layer = "-1"; }},
       { "layer", "*", [&hasLayer] { hasLayer = true; }},
 
-      { "railway", "subway_entrance", [&isSubwayEntrance] { isSubwayEntrance = true; }},
+      { "railway", "subway_entrance", [&isSubway] { isSubway = true; }},
 
       /// @todo Unfortunatelly, it's not working in many cases (route=subway, transport=subway).
       /// Actually, it's better to process subways after feature types assignment.
-      { "station", "subway", [&isSubwayStation] { isSubwayStation = true; }},
+      { "station", "subway", [&isSubway] { isSubway = true; }},
     });
 
     if (!hasLayer && layer)
       p->AddTag("layer", layer);
 
     // Tag 'city' is needed for correct selection of metro icons.
-    if (isSubwayEntrance || isSubwayStation)
+    if (isSubway && p->type == OsmElement::EntityType::Node)
     {
-      string const & city = MatchCity(p);
+      string const city = MatchCity(p);
       if (!city.empty())
         p->AddTag("city", city);
     }
@@ -468,6 +460,8 @@ namespace ftype
         highwayDone = true;
       }
 
+      /// @todo Probably, we can delete this processing because cities
+      /// are matched by limit rect in MatchCity.
       if (!subwayDone && types.IsRwSubway(vTypes[i]))
       {
         TagProcessor(p).ApplyRules
@@ -518,34 +512,33 @@ namespace ftype
     // Stage3: Process base feature tags.
     TagProcessor(p).ApplyRules<void(string &, string &)>
     ({
-      { "atm", "yes", [](string & k, string & v) { k.swap(v); k = "amenity"; }},
-      { "restaurant", "yes", [](string & k, string & v) { k.swap(v); k = "amenity"; }},
-      { "hotel", "yes", [](string & k, string & v) { k.swap(v); k = "tourism"; }},
-      { "building", "entrance", [](string & k, string & v) { k.swap(v); v = "yes"; }},
+      { "addr:city", "*", [&params](string & k, string & v) { params.AddPlace(v); k.clear(); v.clear(); }},
+      { "addr:place", "*", [&params](string & k, string & v) { params.AddPlace(v); k.clear(); v.clear(); }},
+      { "addr:housenumber", "*", [&params](string & k, string & v) { params.AddHouseName(v); k.clear(); v.clear(); }},
       { "addr:housename", "*", [&params](string & k, string & v) { params.AddHouseName(v); k.clear(); v.clear(); }},
-      { "addr:street", "*", [&params](string & k, string & v) { params.AddStreetAddress(v); k.clear(); v.clear(); }},
-      { "addr:housenumber", "*", [&params](string & k, string & v)
-        {
-          // Treat "numbers" like names if it's not an actual number.
-          if (!params.AddHouseNumber(v))
-            params.AddHouseName(v);
-          k.clear(); v.clear();
-        }},
+      { "addr:street", "*", [&params](string & k, string & v) { params.AddStreet(v); k.clear(); v.clear(); }},
+      //{ "addr:streetnumber", "*", [&params](string & k, string & v) { params.AddStreet(v); k.clear(); v.clear(); }},
+      //{ "addr:full", "*", [&params](string & k, string & v) { params.AddAddress(v); k.clear(); v.clear(); }},
+
+      // addr:postcode must be passed to the metadata processor.
+      // { "addr:postcode", "*", [&params](string & k, string & v) { params.AddPostcode(v); k.clear(); v.clear(); }},
+
       { "population", "*", [&params](string & k, string & v)
         {
           // Get population rank.
-          // TODO: similar formula with indexer/feature.cpp, possible need refactoring
           uint64_t n;
           if (strings::to_uint64(v, n))
-            params.rank = static_cast<uint8_t>(log(double(n)) / log(1.1));
+            params.rank = feature::PopulationToRank(n);
           k.clear(); v.clear();
-        }},
+        }
+      },
       { "ref", "*", [&params](string & k, string & v)
         {
           // Get reference (we process road numbers only).
           params.ref = v;
           k.clear(); v.clear();
-        }},
+        }
+      },
       { "layer", "*", [&params](string & k, string & v)
         {
           // Get layer.
@@ -555,7 +548,8 @@ namespace ftype
             int8_t const bound = 10;
             params.layer = my::clamp(params.layer, -bound, bound);
           }
-        }},
+        }
+      },
     });
 
     // Stage4: Match tags in classificator to find feature types.

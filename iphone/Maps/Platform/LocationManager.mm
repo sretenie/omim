@@ -10,96 +10,137 @@
 #include "Framework.h"
 
 #include "map/gps_tracker.hpp"
+#include "routing/router.hpp"
+#include "platform/file_logging.hpp"
 #include "platform/measurement_utils.hpp"
 #include "platform/settings.hpp"
-#include "base/math.hpp"
 
-#include "platform/file_logging.hpp"
+#include "base/math.hpp"
 
 static CLAuthorizationStatus const kRequestAuthStatus = kCLAuthorizationStatusAuthorizedAlways;
 static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlwaysRequestErrorDenied";
 
+namespace
+{
+enum class GeoMode
+{
+  InPosition,
+  NotInPosition,
+  FollowAndRotate,
+  VehicleRouting,
+  PedestrianRouting,
+  BicycleRouting
+};
+
+struct DesiredAccuracy
+{
+  CLLocationAccuracy charging;
+  CLLocationAccuracy battery;
+};
+
+struct GeoModeSettings
+{
+  CLLocationDistance distanceFilter;
+  DesiredAccuracy accuracy;
+};
+
+map<GeoMode, GeoModeSettings> const kGeoSettings{
+    {GeoMode::InPosition,
+     {.distanceFilter = 5,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}},
+    {GeoMode::NotInPosition,
+     {.distanceFilter = 15,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}},
+    {GeoMode::FollowAndRotate,
+     {.distanceFilter = 5,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}},
+    {GeoMode::VehicleRouting,
+     {.distanceFilter = 5,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}},
+    {GeoMode::PedestrianRouting,
+     {.distanceFilter = 5,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}},
+    {GeoMode::BicycleRouting,
+     {.distanceFilter = 5,
+      .accuracy = {.charging = kCLLocationAccuracyBestForNavigation,
+                   .battery = kCLLocationAccuracyBest}}}};
+}  // namespace
+
 @interface LocationManager ()
 
-@property (nonatomic, readwrite) BOOL isDaemonMode;
 @property (nonatomic) BOOL deferringUpdates;
+
+@property (nonatomic) CLLocationManager * locationManager;
+
+@property (nonatomic, readwrite) BOOL isStarted;
+@property (nonatomic, readwrite) location::TLocationError lastLocationError;
+@property (nonatomic) NSMutableSet * observers;
+@property (nonatomic) NSDate * lastLocationTime;
+
+@property (nonatomic) GeoMode geoMode;
 
 @end
 
 @implementation LocationManager
 
-- (id)init
-{
-  if ((self = [super init]))
-  {
-    m_locationManager = [[CLLocationManager alloc] init];
-    m_locationManager.delegate = self;
-    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
-    [self refreshAccuracy];
-    if (!isIOSVersionLessThan(9))
-      m_locationManager.allowsBackgroundLocationUpdates = YES;
-    m_locationManager.pausesLocationUpdatesAutomatically = YES;
-    m_locationManager.headingFilter = 3.0;
-    m_isStarted = NO;
-    m_observers = [[NSMutableSet alloc] init];
-    m_lastLocationTime = nil;
-
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationChanged) name:UIDeviceOrientationDidChangeNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(batteryStateChangedNotification:) name:UIDeviceBatteryStateDidChangeNotification object:nil];
-  }
-  return self;
-}
-
 - (void)batteryStateChangedNotification:(NSNotification *)notification
 {
-  [self refreshAccuracy];
+  [self refreshGeoModeSettings];
 }
 
-- (void)refreshAccuracy
+- (void)refreshGeoModeSettings
 {
-  UIDeviceBatteryState state = [UIDevice currentDevice].batteryState;
-  m_locationManager.desiredAccuracy = (state == UIDeviceBatteryStateCharging) ? kCLLocationAccuracyBestForNavigation : kCLLocationAccuracyBest;
+  UIDeviceBatteryState const state = [UIDevice currentDevice].batteryState;
+  BOOL const isCharging = (state == UIDeviceBatteryStateCharging || state == UIDeviceBatteryStateFull);
+  GeoModeSettings const settings = kGeoSettings.at(self.geoMode);
+  self.locationManager.desiredAccuracy = isCharging ? settings.accuracy.charging : settings.accuracy.battery;
+  self.locationManager.distanceFilter = settings.distanceFilter;
 }
 
 - (void)dealloc
 {
-  m_locationManager.delegate = nil;
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [self reset];
 }
 
 - (void)onDaemonMode
 {
-  self.isDaemonMode = YES;
-  [m_locationManager stopMonitoringSignificantLocationChanges];
-  [m_locationManager startUpdatingLocation];
+  [self.locationManager stopMonitoringSignificantLocationChanges];
+  LOG(LINFO, ("startUpdatingLocation"));
+  [self.locationManager startUpdatingLocation];
 }
 
 - (void)onBackground
 {
   if (!GpsTracker::Instance().IsEnabled())
-    [m_locationManager stopUpdatingLocation];
+  {
+    LOG(LINFO, ("stopUpdatingLocation"));
+    [self.locationManager stopUpdatingLocation];
+  }
 }
 
 - (void)beforeTerminate
 {
   if (!GpsTracker::Instance().IsEnabled())
     return;
-  [m_locationManager startMonitoringSignificantLocationChanges];
+  [self.locationManager startMonitoringSignificantLocationChanges];
 }
 
 - (void)onForeground
 {
-  self.isDaemonMode = NO;
-  [m_locationManager stopMonitoringSignificantLocationChanges];
-  [m_locationManager disallowDeferredLocationUpdates];
+  [self onDaemonMode];
+  [self.locationManager disallowDeferredLocationUpdates];
   self.deferringUpdates = NO;
-  [m_locationManager startUpdatingLocation];
   [self orientationChanged];
 }
 
 - (void)start:(id <LocationObserver>)observer
 {
-  if (!m_isStarted)
+  if (!self.isStarted)
   {
     //YES if location services are enabled; NO if they are not.
     if ([CLLocationManager locationServicesEnabled])
@@ -110,13 +151,14 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
         case kCLAuthorizationStatusAuthorizedWhenInUse:
         case kCLAuthorizationStatusAuthorizedAlways:
         case kCLAuthorizationStatusNotDetermined:
-          if (kRequestAuthStatus == kCLAuthorizationStatusAuthorizedAlways && [m_locationManager respondsToSelector:@selector(requestAlwaysAuthorization)])
-            [m_locationManager requestAlwaysAuthorization];
-          [m_locationManager startUpdatingLocation];
+          if (kRequestAuthStatus == kCLAuthorizationStatusAuthorizedAlways && [self.locationManager respondsToSelector:@selector(requestAlwaysAuthorization)])
+            [self.locationManager requestAlwaysAuthorization];
+          LOG(LINFO, ("startUpdatingLocation"));
+          [self.locationManager startUpdatingLocation];
           if ([CLLocationManager headingAvailable])
-            [m_locationManager startUpdatingHeading];
-          m_isStarted = YES;
-          [m_observers addObject:observer];
+            [self.locationManager startUpdatingHeading];
+          self.isStarted = YES;
+          [self.observers addObject:observer];
           break;
         case kCLAuthorizationStatusRestricted:
         case kCLAuthorizationStatusDenied:
@@ -125,12 +167,12 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
       }
     }
     else
-      [self observer:observer onLocationError:location::EDenied];
+      [self observer:observer onLocationError:location::EGPSIsOff];
   }
   else
   {
-    BOOL updateLocation = ![m_observers containsObject:observer];
-    [m_observers addObject:observer];
+    BOOL updateLocation = ![self.observers containsObject:observer];
+    [self.observers addObject:observer];
     if ([self lastLocationIsValid] && updateLocation)
     {
       // pass last location known location when new observer is attached
@@ -142,33 +184,30 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
 
 - (void)stop:(id <LocationObserver>)observer
 {
-  [m_observers removeObject:observer];
-  if (m_isStarted)
+  [self.observers removeObject:observer];
+  if (self.isStarted && self.observers.count == 0)
   {
-    if ([m_observers count] == 0)
-    {
-      // stop only if no more observers are subsribed
-      m_isStarted = NO;
-      if ([CLLocationManager headingAvailable])
-        [m_locationManager stopUpdatingHeading];
-      [m_locationManager stopUpdatingLocation];
-    }
+    // stop only if no more observers are subsribed
+    self.isStarted = NO;
+    if ([CLLocationManager headingAvailable])
+      [self.locationManager stopUpdatingHeading];
+    LOG(LINFO, ("stopUpdatingLocation"));
+    [self.locationManager stopUpdatingLocation];
   }
 }
 
 - (CLLocation *)lastLocation
 {
-  return m_isStarted ? m_locationManager.location : nil;
+  if (!self.isStarted || self.locationManager.location.horizontalAccuracy < 0.)
+    return nil;
+  return self.locationManager.location;
 }
 
 - (CLHeading *)lastHeading
 {
-  return m_isStarted ? m_locationManager.heading : nil;
-}
-
-- (void)triggerCompass
-{
-  [self locationManager:m_locationManager didUpdateHeading:m_locationManager.heading];
+  if (!self.isStarted || self.locationManager.heading.headingAccuracy < 0.)
+    return nil;
+  return self.locationManager.heading;
 }
 
 - (void)locationManager:(CLLocationManager *)manager didUpdateHeading:(CLHeading *)heading
@@ -181,7 +220,7 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
   [self processLocation:locations.lastObject];
   if (!self.deferringUpdates)
     return;
-  [m_locationManager allowDeferredLocationUpdatesUntilTraveled:300 timeout:15];
+  [self.locationManager allowDeferredLocationUpdatesUntilTraveled:300 timeout:15];
   self.deferringUpdates = NO;
 }
 
@@ -198,13 +237,14 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
   if (location.horizontalAccuracy < 0.)
     return;
 
+  self.lastLocationError = location::TLocationError::ENoError;
   // Save current device time for location.
-  m_lastLocationTime = [NSDate date];
+  self.lastLocationTime = [NSDate date];
   [[Statistics instance] logLocation:location];
   auto const newInfo = gpsInfoFromLocation(location);
-  if (!self.isDaemonMode)
+  if (!MapsAppDelegate.theApp.isDaemonMode)
   {
-    for (id observer in m_observers)
+    for (id observer in self.observers.copy)
        [observer onLocationUpdate:newInfo];
     // TODO(AlexZ): Temporary, remove in the future.
   }
@@ -221,19 +261,24 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
   NSLog(@"locationManager failed with error: %ld, %@", (long)error.code, error.description);
   if (error.code == kCLErrorDenied)
   {
-    if (kRequestAuthStatus == kCLAuthorizationStatusAuthorizedAlways && [m_locationManager respondsToSelector:@selector(requestAlwaysAuthorization)])
+    if (kRequestAuthStatus == kCLAuthorizationStatusAuthorizedAlways && [self.locationManager respondsToSelector:@selector(requestAlwaysAuthorization)])
       [Alohalytics logEvent:kAlohalyticsLocationRequestAlwaysFailed];
-    for (id observer in m_observers)
+    for (id observer in self.observers.copy)
       [self observer:observer onLocationError:location::EDenied];
+  }
+  else if (error.code != kCLErrorLocationUnknown)
+  {
+    for (id observer in self.observers.copy)
+      [self observer:observer onLocationError:location::ENotSupported];
   }
 }
 
 - (BOOL)locationManagerShouldDisplayHeadingCalibration:(CLLocationManager *)manager
 {
-  if (self.isDaemonMode)
+  if (MapsAppDelegate.theApp.isDaemonMode)
     return NO;
   bool on = false;
-  Settings::Get("CompassCalibrationEnabled", on);
+  settings::Get("CompassCalibrationEnabled", on);
   if (!on)
     return NO;
 
@@ -340,12 +385,21 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
 
 - (bool)lastLocationIsValid
 {
-  return (([self lastLocation] != nil) && ([m_lastLocationTime timeIntervalSinceNow] > -300.0));
+  return (([self lastLocation] != nil) && ([self.lastLocationTime timeIntervalSinceNow] > -300.0));
+}
+
+- (bool)isLocationPendingOrNoPosition
+{
+  using location::EMyPositionMode;
+  EMyPositionMode mode;
+  if (!settings::Get(settings::kLocationStateMode, mode))
+    return true;
+  return mode == EMyPositionMode::PendingPosition || mode == EMyPositionMode::NotFollowNoPosition;
 }
 
 - (BOOL)enabledOnMap
 {
-  for (id observer in m_observers)
+  for (id observer in self.observers.copy)
     if ([observer isKindOfClass:[MapViewController class]])
       return YES;
   return NO;
@@ -353,18 +407,19 @@ static NSString * const kAlohalyticsLocationRequestAlwaysFailed = @"$locationAlw
 
 - (void)orientationChanged
 {
-  m_locationManager.headingOrientation = (CLDeviceOrientation)[UIDevice currentDevice].orientation;
+  self.locationManager.headingOrientation = (CLDeviceOrientation)[UIDevice currentDevice].orientation;
 }
 
 - (void)notifyCompassUpdate:(location::CompassInfo const &)newInfo
 {
-  for (id observer in m_observers)
+  for (id observer in self.observers.copy)
     if ([observer respondsToSelector:@selector(onCompassUpdate:)])
       [observer onCompassUpdate:newInfo];
 }
 
 - (void)observer:(id<LocationObserver>)observer onLocationError:(location::TLocationError)errorCode
 {
+  self.lastLocationError = errorCode;
   if ([(NSObject *)observer respondsToSelector:@selector(onLocationError:)])
     [observer onLocationError:errorCode];
 }
@@ -403,6 +458,77 @@ location::CompassInfo compasInfoFromHeading(CLHeading const * h)
   else if (h.headingAccuracy >= 0.0)
     info.m_bearing = my::DegToRad(h.magneticHeading);
   return info;
+}
+
+- (void)reset
+{
+  _isStarted = NO;
+  _lastLocationTime = nil;
+  _observers = [NSMutableSet set];
+  _locationManager.delegate = nil;
+  _locationManager = nil;
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)processMyPositionStateModeEvent:(location::EMyPositionMode)mode
+{
+  auto const & f = GetFramework();
+  if (f.IsRoutingActive())
+  {
+    switch (f.GetRouter())
+    {
+      case routing::RouterType::Vehicle:
+        self.geoMode = GeoMode::VehicleRouting;
+        break;
+      case routing::RouterType::Pedestrian:
+        self.geoMode = GeoMode::PedestrianRouting;
+        break;
+      case routing::RouterType::Bicycle:
+        self.geoMode = GeoMode::BicycleRouting;
+        break;
+    }
+  }
+  else
+  {
+    switch (mode)
+    {
+      case location::EMyPositionMode::PendingPosition:
+        break;
+      case location::EMyPositionMode::NotFollowNoPosition:
+      case location::EMyPositionMode::NotFollow:
+        self.geoMode = GeoMode::NotInPosition;
+        break;
+      case location::EMyPositionMode::Follow:
+        self.geoMode = GeoMode::InPosition;
+        break;
+      case location::EMyPositionMode::FollowAndRotate:
+        self.geoMode = GeoMode::FollowAndRotate;
+        break;
+    }
+  }
+  [self refreshGeoModeSettings];
+}
+
+#pragma mark - Properties
+
+- (CLLocationManager *)locationManager
+{
+  if (!_locationManager)
+  {
+    [self reset];
+    _locationManager = [[CLLocationManager alloc] init];
+    _locationManager.delegate = self;
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    [self refreshGeoModeSettings];
+    if (!(isIOS7 || isIOS8))
+      _locationManager.allowsBackgroundLocationUpdates = YES;
+    _locationManager.pausesLocationUpdatesAutomatically = YES;
+    _locationManager.headingFilter = 3.0;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationChanged) name:UIDeviceOrientationDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(batteryStateChangedNotification:) name:UIDeviceBatteryStateDidChangeNotification object:nil];
+  }
+  return _locationManager;
 }
 
 @end

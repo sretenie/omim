@@ -1,18 +1,24 @@
 #import "Common.h"
-#import "CountryTreeVC.h"
 #import "EAGLView.h"
 #import "MapsAppDelegate.h"
 #import "MapViewController.h"
+#import "MWMAddPlaceNavigationBar.h"
 #import "MWMAlertViewController.h"
 #import "MWMAPIBar.h"
+#import "MWMAuthorizationCommon.h"
 #import "MWMBottomMenuViewController.h"
+#import "MWMButton.h"
+#import "MWMFrameworkListener.h"
+#import "MWMFrameworkObservers.h"
 #import "MWMMapViewControlsManager.h"
+#import "MWMObjectsCategorySelectorController.h"
+#import "MWMPlacePageEntity.h"
 #import "MWMPlacePageViewManager.h"
 #import "MWMPlacePageViewManagerDelegate.h"
 #import "MWMRoutePreview.h"
 #import "MWMSearchManager.h"
 #import "MWMSearchView.h"
-#import "MWMZoomButtons.h"
+#import "MWMSideButtons.h"
 #import "RouteState.h"
 #import "Statistics.h"
 
@@ -20,13 +26,23 @@
 
 #include "Framework.h"
 
+#include "platform/local_country_file_utils.hpp"
+
+#include "storage/storage_helpers.hpp"
+
+namespace
+{
+  NSString * const kMapToCategorySelectorSegue = @"MapToCategorySelectorSegue";
+} // namespace
+
 extern NSString * const kAlohalyticsTapEventKey;
 
 @interface MWMMapViewControlsManager ()<
     MWMPlacePageViewManagerProtocol, MWMNavigationDashboardManagerProtocol,
-    MWMSearchManagerProtocol, MWMSearchViewProtocol, MWMBottomMenuControllerProtocol, MWMRoutePreviewDataSource>
+    MWMSearchManagerProtocol, MWMSearchViewProtocol, MWMBottomMenuControllerProtocol,
+    MWMRoutePreviewDataSource, MWMFrameworkRouteBuilderObserver>
 
-@property (nonatomic) MWMZoomButtons * zoomButtons;
+@property (nonatomic) MWMSideButtons * sideButtons;
 @property (nonatomic) MWMBottomMenuViewController * menuController;
 @property (nonatomic) MWMPlacePageViewManager * placePageManager;
 @property (nonatomic) MWMNavigationDashboardManager * navigationManager;
@@ -45,12 +61,6 @@ extern NSString * const kAlohalyticsTapEventKey;
 
 @implementation MWMMapViewControlsManager
 
-- (void)setMyPositionMode:(location::EMyPositionMode)mode
-{
-  _myPositionMode = mode;
-  [self.menuController onLocationStateModeChanged:mode];
-}
-
 - (instancetype)initWithParentController:(MapViewController *)controller
 {
   if (!controller)
@@ -59,7 +69,7 @@ extern NSString * const kAlohalyticsTapEventKey;
   if (!self)
     return nil;
   self.ownerController = controller;
-  self.zoomButtons = [[MWMZoomButtons alloc] initWithParentView:controller.view];
+  self.sideButtons = [[MWMSideButtons alloc] initWithParentView:controller.view];
   self.menuController = [[MWMBottomMenuViewController alloc] initWithParentController:controller delegate:self];
   self.placePageManager = [[MWMPlacePageViewManager alloc] initWithViewController:controller delegate:self];
   self.navigationManager = [[MWMNavigationDashboardManager alloc] initWithParentView:controller.view delegate:self];
@@ -67,11 +77,58 @@ extern NSString * const kAlohalyticsTapEventKey;
   self.hidden = NO;
   self.zoomHidden = NO;
   self.menuState = MWMBottomMenuStateInactive;
-  LocationManager * m = MapsAppDelegate.theApp.m_locationManager;
-  self.routeSource = m.lastLocationIsValid ? MWMRoutePoint(m.lastLocation.mercator) :
-                                             MWMRoutePoint::MWMRoutePointZero();
-  self.routeDestination = MWMRoutePoint::MWMRoutePointZero();
+  [self configRoutePoints];
+  [MWMFrameworkListener addObserver:self];
   return self;
+}
+
+- (void)configRoutePoints
+{
+  if ([Alohalytics isFirstSession])
+  {
+    self.routeSource = MWMRoutePoint::MWMRoutePointZero();
+  }
+  else
+  {
+    LocationManager * m = MapsAppDelegate.theApp.locationManager;
+    self.routeSource = m.lastLocationIsValid ? MWMRoutePoint(m.lastLocation.mercator)
+                                             : MWMRoutePoint::MWMRoutePointZero();
+  }
+  self.routeDestination = MWMRoutePoint::MWMRoutePointZero();
+}
+
+#pragma mark - My Position
+
+- (void)processMyPositionStateModeEvent:(location::EMyPositionMode)mode
+{
+  [self.sideButtons processMyPositionStateModeEvent:mode];
+}
+
+#pragma mark - MWMFrameworkRouteBuilderObserver
+
+- (void)processRouteBuilderEvent:(routing::IRouter::ResultCode)code
+                       countries:(storage::TCountriesVec const &)absentCountries
+{
+  switch (code)
+  {
+    case routing::IRouter::ResultCode::NoError:
+    {
+      [self.navigationManager setRouteBuilderProgress:100];
+      self.searchHidden = YES;
+      break;
+    }
+    case routing::IRouter::Cancelled:
+    case routing::IRouter::NeedMoreMaps:
+      break;
+    default:
+      [self handleRoutingError];
+      break;
+  }
+}
+
+- (void)processRouteBuilderProgress:(CGFloat)progress
+{
+  [self.navigationManager setRouteBuilderProgress:progress];
 }
 
 #pragma mark - Layout
@@ -81,13 +138,13 @@ extern NSString * const kAlohalyticsTapEventKey;
   [self.menuController refreshLayout];
 }
 
-- (void)refresh
+- (void)mwm_refreshUI
 {
-  [self.zoomButtons refresh];
-  [self.navigationManager refresh];
-  [self.searchManager refresh];
-  [self.menuController refresh];
-  [self.placePageManager refresh];
+  [self.sideButtons mwm_refreshUI];
+  [self.navigationManager mwm_refreshUI];
+  [self.searchManager mwm_refreshUI];
+  [self.menuController mwm_refreshUI];
+  [self.placePageManager mwm_refreshUI];
 }
 
 - (void)willRotateToInterfaceOrientation:(UIInterfaceOrientation)toInterfaceOrientation
@@ -127,9 +184,9 @@ extern NSString * const kAlohalyticsTapEventKey;
   [self.placePageManager hidePlacePage];
 }
 
-- (void)showPlacePageWithUserMark:(unique_ptr<UserMarkCopy>)userMark
+- (void)showPlacePage:(place_page::Info const &)info
 {
-  [self.placePageManager showPlacePageWithUserMark:move(userMark)];
+  [self.placePageManager showPlacePage:info];
   [self refreshHelperPanels:UIInterfaceOrientationIsLandscape(self.ownerController.interfaceOrientation)];
 }
 
@@ -139,6 +196,11 @@ extern NSString * const kAlohalyticsTapEventKey;
 }
 
 #pragma mark - MWMSearchManagerProtocol
+
+- (MWMAlertViewController *)alertController
+{
+  return self.ownerController.alertController;
+}
 
 - (void)searchViewDidEnterState:(MWMSearchManagerState)state
 {
@@ -200,11 +262,25 @@ extern NSString * const kAlohalyticsTapEventKey;
 
 #pragma mark - MWMSearchManagerProtocol & MWMBottomMenuControllerProtocol
 
-- (void)actionDownloadMaps
+- (void)actionDownloadMaps:(mwm::DownloaderMode)mode
 {
-  [Alohalytics logEvent:kAlohalyticsTapEventKey withValue:@"downloader"];
-  CountryTreeVC * vc = [[CountryTreeVC alloc] initWithNodePosition:-1];
-  [self.ownerController.navigationController pushViewController:vc animated:YES];
+  if (platform::migrate::NeedMigrate())
+  {
+    if (GetFramework().IsRoutingActive())
+    {
+      [Statistics logEvent:kStatDownloaderMigrationProhibitedDialogue withParameters:@{kStatFrom : kStatDownloader}];
+      [self.alertController presentMigrationProhibitedAlert];
+    }
+    else
+    {
+      [Statistics logEvent:kStatDownloaderMigrationDialogue withParameters:@{kStatFrom : kStatDownloader}];
+      [self.ownerController openMigration];
+    }
+  }
+  else
+  {
+    [self.ownerController openMapsDownloader:mode];
+  }
 }
 
 #pragma mark - MWMBottomMenuControllerProtocol
@@ -226,6 +302,41 @@ extern NSString * const kAlohalyticsTapEventKey;
   }
 }
 
+#pragma mark - MWMBottomMenuControllerProtocol
+
+- (void)didFinishAddingPlace
+{
+  self.menuState = MWMBottomMenuStateInactive;
+  static_cast<EAGLView *>(self.ownerController.view).widgetsManager.fullScreen = NO;
+}
+
+#pragma mark - MWMBottomMenuControllerProtocol && MWMPlacePageViewManagerProtocol
+
+- (void)addPlace:(BOOL)isBusiness hasPoint:(BOOL)hasPoint point:(m2::PointD const &)point
+{
+  self.menuState = MWMBottomMenuStateHidden;
+  static_cast<EAGLView *>(self.ownerController.view).widgetsManager.fullScreen = YES;
+  [self.placePageManager dismissPlacePage];
+  self.searchManager.state = MWMSearchManagerStateHidden;
+
+  [MWMAddPlaceNavigationBar showInSuperview:self.ownerController.view
+                                 isBusiness:isBusiness applyPosition:hasPoint position:point doneBlock:^
+  {
+    auto & f = GetFramework();
+
+    if (IsPointCoveredByDownloadedMaps(f.GetViewportCenter(), f.Storage(), f.CountryInfoGetter()))
+      [self.ownerController performSegueWithIdentifier:kMapToCategorySelectorSegue sender:nil];
+    else
+      [self.ownerController.alertController presentIncorrectFeauturePositionAlert];
+
+    [self didFinishAddingPlace];
+  }
+  cancelBlock:^
+  {
+    [self didFinishAddingPlace];
+  }];
+}
+
 #pragma mark - MWMPlacePageViewManagerDelegate
 
 - (void)dragPlacePage:(CGRect)frame
@@ -236,7 +347,7 @@ extern NSString * const kAlohalyticsTapEventKey;
   if (ownerViewSize.width > ownerViewSize.height)
     self.menuController.leftBound = frame.origin.x + frame.size.width;
   else
-    [self.zoomButtons setBottomBound:frame.origin.y];
+    [self.sideButtons setBottomBound:frame.origin.y];
 }
 
 - (void)placePageDidClose
@@ -273,7 +384,7 @@ extern NSString * const kAlohalyticsTapEventKey;
 - (void)restoreRouteTo:(m2::PointD const &)to
 {
   auto & f = GetFramework();
-  m2::PointD const myPosition = [MapsAppDelegate theApp].m_locationManager.lastLocation.mercator;
+  m2::PointD const myPosition = [MapsAppDelegate theApp].locationManager.lastLocation.mercator;
   f.SetRouter(f.GetBestRouter(myPosition, to));
   self.routeSource = MWMRoutePoint(myPosition);
   self.routeDestination = {to, @"Destination"};
@@ -305,7 +416,10 @@ extern NSString * const kAlohalyticsTapEventKey;
 {
   self.routeSource = from;
   if ((from.IsMyPosition() && self.routeDestination.IsMyPosition()) || from == self.routeDestination)
+  {
+    GetFramework().CloseRouting();
     self.routeDestination = MWMRoutePoint::MWMRoutePointZero();
+  }
 
   if (IPAD)
     self.searchManager.state = MWMSearchManagerStateHidden;
@@ -318,7 +432,10 @@ extern NSString * const kAlohalyticsTapEventKey;
 {
   self.routeDestination = to;
   if ((to.IsMyPosition() && self.routeSource.IsMyPosition()) || to == self.routeSource)
+  {
+    GetFramework().CloseRouting();
     self.routeSource = MWMRoutePoint::MWMRoutePointZero();
+  }
 
   if (IPAD)
     self.searchManager.state = MWMSearchManagerStateHidden;
@@ -334,7 +451,7 @@ extern NSString * const kAlohalyticsTapEventKey;
   if (!IPAD)
   {
     CGFloat const bound = newFrame.origin.y + newFrame.size.height;
-    self.placePageManager.topBound = self.zoomButtons.topBound = bound;
+    self.placePageManager.topBound = self.sideButtons.topBound = bound;
     return;
   }
 
@@ -375,8 +492,8 @@ extern NSString * const kAlohalyticsTapEventKey;
   if (!self.isPossibleToBuildRoute)
     return;
 
-  LocationManager * locMgr = [MapsAppDelegate theApp].m_locationManager;
-  if (!locMgr.lastLocationIsValid && self.routeSource.IsMyPosition())
+  LocationManager * locMgr = [MapsAppDelegate theApp].locationManager;
+  if (!locMgr.lastLocation && self.routeSource.IsMyPosition())
   {
     MWMAlertViewController * alert =
         [[MWMAlertViewController alloc] initWithViewController:self.ownerController];
@@ -387,7 +504,7 @@ extern NSString * const kAlohalyticsTapEventKey;
   m2::PointD const locationPoint = locMgr.lastLocation.mercator;
   if (self.routeSource.IsMyPosition())
   {
-    [[Statistics instance]
+    [Statistics
               logEvent:kStatPointToPoint
         withParameters:@{kStatAction : kStatBuildRoute, kStatValue : kStatFromMyPosition}];
     self.routeSource = MWMRoutePoint(locationPoint);
@@ -395,22 +512,22 @@ extern NSString * const kAlohalyticsTapEventKey;
   }
   else if (self.routeDestination.IsMyPosition())
   {
-    [[Statistics instance]
+    [Statistics
               logEvent:kStatPointToPoint
         withParameters:@{kStatAction : kStatBuildRoute, kStatValue : kStatToMyPosition}];
     self.routeDestination = MWMRoutePoint(locationPoint);
   }
   else
   {
-    [[Statistics instance]
+    [Statistics
               logEvent:kStatPointToPoint
         withParameters:@{kStatAction : kStatBuildRoute, kStatValue : kStatPointToPoint}];
   }
 
   self.navigationManager.state = MWMNavigationDashboardStatePlanning;
-  [self.menuController setPlanning];
+  self.menuState = MWMBottomMenuStatePlanning;
   GetFramework().BuildRoute(self.routeSource.Point(), self.routeDestination.Point(), 0 /* timeoutSec */);
-  [self.navigationManager setRouteBuildingProgress:0.];
+  [self.navigationManager setRouteBuilderProgress:0.];
 }
 
 - (BOOL)isPossibleToBuildRoute
@@ -423,7 +540,7 @@ extern NSString * const kAlohalyticsTapEventKey;
 {
   CGFloat const topBound = self.topBound + self.navigationManager.height;
   if (!IPAD)
-    [self.zoomButtons setTopBound:topBound];
+    [self.sideButtons setTopBound:topBound];
   [self.placePageManager setTopBound:topBound];
 }
 
@@ -432,27 +549,23 @@ extern NSString * const kAlohalyticsTapEventKey;
   BOOL const isSourceMyPosition = self.routeSource.IsMyPosition();
   BOOL const isDestinationMyPosition = self.routeDestination.IsMyPosition();
   if (isSourceMyPosition)
-    [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatGo)
+    [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatGo)
                      withParameters:@{kStatValue : kStatFromMyPosition}];
   else if (isDestinationMyPosition)
-    [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatGo)
+    [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatGo)
                      withParameters:@{kStatValue : kStatToMyPosition}];
   else
-    [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatGo)
+    [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatGo)
                      withParameters:@{kStatValue : kStatPointToPoint}];
 
   if (!isSourceMyPosition)
   {
     MWMAlertViewController * controller = [[MWMAlertViewController alloc] initWithViewController:self.ownerController];
-    LocationManager * manager = MapsAppDelegate.theApp.m_locationManager;
-    auto const m = self.myPositionMode;
-    BOOL const needToRebuild = manager.lastLocationIsValid &&
-                               m != location::MODE_PENDING_POSITION &&
-                               m != location::MODE_UNKNOWN_POSITION &&
-                               !isDestinationMyPosition;
+    LocationManager * manager = MapsAppDelegate.theApp.locationManager;
+    BOOL const needToRebuild = manager.lastLocationIsValid && !manager.isLocationPendingOrNoPosition && !isDestinationMyPosition;
+    m2::PointD const locationPoint = manager.lastLocation.mercator;
     [controller presentPoint2PointAlertWithOkBlock:^
     {
-      m2::PointD const locationPoint = manager.lastLocation.mercator;
       self.routeSource = MWMRoutePoint(locationPoint);
       [self buildRoute];
     } needToRebuild:needToRebuild];
@@ -476,23 +589,24 @@ extern NSString * const kAlohalyticsTapEventKey;
 
 - (void)didCancelRouting
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatClose)];
-  [[MapsAppDelegate theApp].m_locationManager stop:self.navigationManager];
+  [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatClose)];
+  [[MapsAppDelegate theApp].locationManager stop:self.navigationManager];
   self.navigationManager.state = MWMNavigationDashboardStateHidden;
   self.disableStandbyOnRouteFollowing = NO;
   [MapsAppDelegate theApp].routingPlaneMode = MWMRoutingPlaneModeNone;
   [RouteState remove];
-  [self.menuController setInactive];
+  self.menuState = MWMBottomMenuStateInactive;
   [self resetRoutingPoint];
   [self navigationDashBoardDidUpdate];
   if ([MapsAppDelegate isAutoNightMode])
     [MapsAppDelegate resetToDefaultMapStyle];
   GetFramework().CloseRouting();
+  [MapsAppDelegate.theApp showAlertIfRequired];
 }
 
 - (void)swapPointsAndRebuildRouteIfPossible
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatSwapRoutingPoints)];
+  [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatSwapRoutingPoints)];
   swap(_routeSource, _routeDestination);
   [self buildRoute];
 
@@ -506,7 +620,7 @@ extern NSString * const kAlohalyticsTapEventKey;
 
 - (void)didStartEditingRoutePoint:(BOOL)isSource
 {
-  [[Statistics instance] logEvent:kStatEventName(kStatPointToPoint, kStatSearch)
+  [Statistics logEvent:kStatEventName(kStatPointToPoint, kStatSearch)
                    withParameters:@{kStatValue : (isSource ? kStatSource : kStatDestination)}];
   MapsAppDelegate.theApp.routingPlaneMode = isSource ? MWMRoutingPlaneModeSearchSource : MWMRoutingPlaneModeSearchDestination;
   self.searchManager.state = MWMSearchManagerStateDefault;
@@ -514,7 +628,7 @@ extern NSString * const kAlohalyticsTapEventKey;
 
 - (void)resetRoutingPoint
 {
-  LocationManager * m = MapsAppDelegate.theApp.m_locationManager;
+  LocationManager * m = MapsAppDelegate.theApp.locationManager;
   self.routeSource = m.lastLocationIsValid ? MWMRoutePoint(m.lastLocation.mercator) :
                                              MWMRoutePoint::MWMRoutePointZero();
   self.routeDestination = MWMRoutePoint::MWMRoutePointZero();
@@ -531,7 +645,7 @@ extern NSString * const kAlohalyticsTapEventKey;
     });
   }
   self.navigationManager.state = MWMNavigationDashboardStateReady;
-  [self.menuController setGo];
+  self.menuState = MWMBottomMenuStateGo;
 }
 
 - (void)routingHidden
@@ -564,11 +678,6 @@ extern NSString * const kAlohalyticsTapEventKey;
     [[MapsAppDelegate theApp] enableStandby];
 }
 
-- (void)setRouteBuildingProgress:(CGFloat)progress
-{
-  [self.navigationManager setRouteBuildingProgress:progress];
-}
-
 #pragma mark - MWMRoutePreviewDataSource
 
 - (NSString *)source
@@ -599,13 +708,28 @@ extern NSString * const kAlohalyticsTapEventKey;
 - (void)setZoomHidden:(BOOL)zoomHidden
 {
   _zoomHidden = zoomHidden;
-  self.zoomButtons.hidden = self.hidden || zoomHidden;
+  self.sideButtons.hidden = self.hidden || zoomHidden;
 }
 
 - (void)setMenuState:(MWMBottomMenuState)menuState
 {
   _menuState = menuState;
-  self.menuController.state = self.hidden ? MWMBottomMenuStateHidden : menuState;
+  MWMBottomMenuState const state = self.hidden ? MWMBottomMenuStateHidden : menuState;
+  switch (state)
+  {
+    case MWMBottomMenuStateInactive:
+      [self.menuController setInactive];
+      break;
+    case MWMBottomMenuStatePlanning:
+      [self.menuController setPlanning];
+      break;
+    case MWMBottomMenuStateGo:
+      [self.menuController setGo];
+      break;
+    default:
+      self.menuController.state = state;
+      break;
+  }
 }
 
 - (MWMBottomMenuState)menuState
@@ -621,6 +745,11 @@ extern NSString * const kAlohalyticsTapEventKey;
   return self.navigationManager.state;
 }
 
+- (MWMPlacePageEntity *)placePageEntity
+{
+  return self.placePageManager.entity;
+}
+
 - (BOOL)isDirectionViewShown
 {
   return self.placePageManager.isDirectionViewShown;
@@ -630,7 +759,7 @@ extern NSString * const kAlohalyticsTapEventKey;
 {
   if (IPAD)
     return;
-  _topBound = self.placePageManager.topBound = self.zoomButtons.topBound = self.navigationManager.topBound = topBound;
+  _topBound = self.placePageManager.topBound = self.sideButtons.topBound = self.navigationManager.topBound = topBound;
 }
 
 - (void)setLeftBound:(CGFloat)leftBound

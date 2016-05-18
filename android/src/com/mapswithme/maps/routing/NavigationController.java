@@ -86,10 +86,10 @@ public class NavigationController
   private void updatePedestrian(RoutingInfo info)
   {
     Location next = info.pedestrianNextDirection;
-    Location location = LocationHelper.INSTANCE.getLastLocation();
-    DistanceAndAzimut da = Framework.nativeGetDistanceAndAzimutFromLatLon(next.getLatitude(), next.getLongitude(),
-                                                                          location.getLatitude(), location.getLongitude(),
-                                                                          mNorth);
+    Location location = LocationHelper.INSTANCE.getSavedLocation();
+    DistanceAndAzimut da = Framework.nativeGetDistanceAndAzimuthFromLatLon(next.getLatitude(), next.getLongitude(),
+                                                                           location.getLatitude(), location.getLongitude(),
+                                                                           mNorth);
     String[] splitDistance = da.getDistance().split(" ");
     mDistanceTurn.setText(Utils.formatUnitsText(R.dimen.text_size_display_1, R.dimen.text_size_toolbar,
                                                 splitDistance[0], splitDistance[1]));

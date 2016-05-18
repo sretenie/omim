@@ -27,7 +27,6 @@ public class ChooseBookmarkCategoryFragment extends BaseMwmDialogFragment implem
   private ChooseBookmarkCategoryAdapter mAdapter;
   private RecyclerView mRecycler;
 
-
   public interface Listener
   {
     void onCategoryChanged(int bookmarkId, int newCategoryId);
@@ -86,7 +85,7 @@ public class ChooseBookmarkCategoryFragment extends BaseMwmDialogFragment implem
 
   private void createCategory(String name)
   {
-    final int category = BookmarkManager.INSTANCE.createCategory(name);
+    final int category = BookmarkManager.INSTANCE.nativeCreateCategory(name);
     mBookmark.setCategoryId(category);
     mAdapter.chooseItem(category);
 

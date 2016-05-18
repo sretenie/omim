@@ -20,7 +20,6 @@
 #include "drape_frontend/route_renderer.hpp"
 #include "drape_frontend/threads_commutator.hpp"
 #include "drape_frontend/tile_info.hpp"
-#include "drape_frontend/tile_tree.hpp"
 #include "drape_frontend/user_event_stream.hpp"
 
 #include "drape/pointers.hpp"
@@ -33,9 +32,11 @@
 #include "platform/location.hpp"
 
 #include "geometry/screenbase.hpp"
+#include "geometry/triangle2d.hpp"
 
 #include "std/function.hpp"
 #include "std/map.hpp"
+#include "std/array.hpp"
 
 namespace dp
 {
@@ -49,14 +50,14 @@ namespace df
 class SelectionShape;
 class Framebuffer;
 class TransparentLayer;
+class SelectObjectMessage;
 
 struct TapInfo
 {
   m2::PointD const m_pixelPoint;
-  bool m_isLong;
-
-  bool m_isMyPositionTapped;
-  FeatureID m_featureTapped;
+  bool const m_isLong;
+  bool const m_isMyPositionTapped;
+  FeatureID const m_featureTapped;
 };
 
 class FrontendRenderer : public BaseRenderer
@@ -65,8 +66,7 @@ class FrontendRenderer : public BaseRenderer
 {
 public:
   using TModelViewChanged = function<void (ScreenBase const & screen)>;
-  using TIsCountryLoaded = TIsCountryLoaded;
-  using TTapEventInfoFn = function<void (m2::PointD const & pxPoint, bool isLong, bool isMyPosition, FeatureID const & id)>;
+  using TTapEventInfoFn = function<void (TapInfo const &)>;
   using TUserPositionChangedFn = function<void (m2::PointD const & pt)>;
   using TScaleStartedFn = function<void ()>;
   using TScaleEndedFn = function<void ()>;
@@ -81,13 +81,16 @@ public:
            ref_ptr<dp::TextureManager> texMng,
            Viewport viewport,
            TModelViewChanged const & modelViewChangedFn,
-           TIsCountryLoaded const & isCountryLoaded,
            TTapEventInfoFn const & tapEventFn,
            TUserPositionChangedFn const & positionChangedFn,
            location::TMyPositionModeChanged myPositionModeCallback,
            location::EMyPositionMode initMode,
            ref_ptr<RequestedTiles> requestedTiles,
+           double timeInBackground,
            bool allow3dBuildings,
+           bool blockTapEvents,
+           bool firstLaunch,
+           bool isRoutingActive,
            TScaleStartedFn scaleStartedFn,
            TScaleEndedFn scaleEndedFn,
            TDragStartedFn dragStartedFn,
@@ -96,13 +99,16 @@ public:
       : BaseRenderer::Params(commutator, factory, texMng)
       , m_viewport(viewport)
       , m_modelViewChangedFn(modelViewChangedFn)
-      , m_isCountryLoadedFn(isCountryLoaded)
       , m_tapEventFn(tapEventFn)
       , m_positionChangedFn(positionChangedFn)
       , m_myPositionModeCallback(myPositionModeCallback)
       , m_initMyPositionMode(initMode)
       , m_requestedTiles(requestedTiles)
+      , m_timeInBackground(timeInBackground)
       , m_allow3dBuildings(allow3dBuildings)
+      , m_blockTapEvents(blockTapEvents)
+      , m_firstLaunch(firstLaunch)
+      , m_isRoutingActive(isRoutingActive)
       , m_scaleStartedFn(scaleStartedFn)
       , m_scaleEndedFn(scaleEndedFn)
       , m_dragStartedFn(dragStartedFn)
@@ -112,13 +118,16 @@ public:
 
     Viewport m_viewport;
     TModelViewChanged m_modelViewChangedFn;
-    TIsCountryLoaded m_isCountryLoadedFn;
     TTapEventInfoFn m_tapEventFn;
     TUserPositionChangedFn m_positionChangedFn;
     location::TMyPositionModeChanged m_myPositionModeCallback;
     location::EMyPositionMode m_initMyPositionMode;
     ref_ptr<RequestedTiles> m_requestedTiles;
+    double m_timeInBackground;
     bool m_allow3dBuildings;
+    bool m_blockTapEvents;
+    bool m_firstLaunch;
+    bool m_isRoutingActive;
     TScaleStartedFn m_scaleStartedFn;
     TScaleEndedFn m_scaleEndedFn;
     TDragStartedFn m_dragStartedFn;
@@ -148,7 +157,7 @@ public:
 
   /// MyPositionController::Listener
   void PositionChanged(m2::PointD const & position) override;
-  void ChangeModelView(m2::PointD const & center) override;
+  void ChangeModelView(m2::PointD const & center, int zoomLevel) override;
   void ChangeModelView(double azimuth) override;
   void ChangeModelView(m2::RectD const & rect) override;
   void ChangeModelView(m2::PointD const & userPos, double azimuth,
@@ -161,6 +170,7 @@ protected:
 private:
   void OnResize(ScreenBase const & screen);
   void RenderScene(ScreenBase const & modelView);
+  void PrepareBucket(dp::GLState const & state, drape_ptr<dp::RenderBucket> & bucket);
   void MergeBuckets();
   void RenderSingleGroup(ScreenBase const & modelView, ref_ptr<BaseRenderGroup> group);
   void RefreshProjection(ScreenBase const & screen);
@@ -168,17 +178,22 @@ private:
   void RefreshPivotTransform(ScreenBase const & screen);
   void RefreshBgColor();
 
+  //////
+  /// Render part of scene
+  void Render2dLayer(ScreenBase const & modelView);
+  void Render3dLayer(ScreenBase const & modelView);
+  void RenderOverlayLayer(ScreenBase const & modelView);
+  //////
   ScreenBase const & ProcessEvents(bool & modelViewChanged, bool & viewportChanged);
   void PrepareScene(ScreenBase const & modelView);
   void UpdateScene(ScreenBase const & modelView);
+  void BuildOverlayTree(ScreenBase const & modelView);
 
   void EmitModelViewChanged(ScreenBase const & modelView) const;
 
-  void ResolveTileKeys(ScreenBase const & screen, TTilesCollection & tiles);
-  void ResolveTileKeys(m2::RectD const & rect, TTilesCollection & tiles);
-  int GetCurrentZoomLevel() const;
-  int GetCurrentZoomLevelForData() const;
+  TTilesCollection ResolveTileKeys(ScreenBase const & screen);
   void ResolveZoomLevel(ScreenBase const & screen);
+  void UpdateDisplacementEnabled();
   void CheckPerspectiveMinScale();
   void CheckIsometryMinScale(ScreenBase const & screen);
 
@@ -198,7 +213,9 @@ private:
   void CorrectScalePoint(m2::PointD & pt1, m2::PointD & pt2) const override;
   void CorrectGlobalScalePoint(m2::PointD & pt) const override;
   void OnScaleEnded() override;
-  void OnAnimationStarted(ref_ptr<BaseModelViewAnimation> anim) override;
+  void OnAnimationStarted(ref_ptr<Animation> anim) override;
+  void OnPerspectiveSwitchRejected() override;
+  void OnTouchMapAction() override;
 
   class Routine : public threads::IRoutine
   {
@@ -218,40 +235,53 @@ private:
   void UpdateOverlayTree(ScreenBase const & modelView, drape_ptr<RenderGroup> & renderGroup);
   void EndUpdateOverlayTree();
 
-  void AddToRenderGroup(vector<drape_ptr<RenderGroup>> & groups,
-                        dp::GLState const & state,
+  void AddToRenderGroup(dp::GLState const & state,
                         drape_ptr<dp::RenderBucket> && renderBucket,
                         TileKey const & newTile);
-  void OnAddRenderGroup(TileKey const & tileKey, dp::GLState const & state,
-                        drape_ptr<dp::RenderBucket> && renderBucket);
-  void OnDeferRenderGroup(TileKey const & tileKey, dp::GLState const & state,
-                          drape_ptr<dp::RenderBucket> && renderBucket);
-
-  void OnActivateTile(TileKey const & tileKey);
-  void OnRemoveTile(TileKey const & tileKey);
 
   using TRenderGroupRemovePredicate = function<bool(drape_ptr<RenderGroup> const &)>;
-  void RemoveRenderGroups(TRenderGroupRemovePredicate const & predicate);
+  void RemoveRenderGroupsLater(TRenderGroupRemovePredicate const & predicate);
 
   void FollowRoute(int preferredZoomLevel, int preferredZoomLevelIn3d,
                    double rotationAngle, double angleFOV);
   void InvalidateRect(m2::RectD const & gRect);
   bool CheckTileGenerations(TileKey const & tileKey);
+  void UpdateCanBeDeletedStatus();
 
   void OnCompassTapped();
 
-  FeatureID GetVisiblePOI(m2::PointD const & pixelPoint) const;
-  FeatureID GetVisiblePOI(m2::RectD const & pixelRect) const;
+  FeatureID GetVisiblePOI(m2::PointD const & pixelPoint);
+  FeatureID GetVisiblePOI(m2::RectD const & pixelRect);
 
   bool IsPerspective() const;
 
   void PrepareGpsTrackPoints(size_t pointsCount);
 
-private:
+  void PullToBoundArea(bool randomPlace, bool applyZoom);
+
+  void ProcessSelection(ref_ptr<SelectObjectMessage> msg);
+
   drape_ptr<dp::GpuProgramManager> m_gpuProgramManager;
 
-  vector<drape_ptr<RenderGroup>> m_renderGroups;
-  vector<drape_ptr<RenderGroup>> m_deferredRenderGroups;
+  struct RenderLayer
+  {
+    enum RenderLayerID
+    {
+      Geometry2dID,
+      OverlayID,
+      Geometry3dID,
+      LayerCountID
+    };
+
+    static RenderLayerID GetLayerID(dp::GLState const & renderGroup);
+
+    vector<drape_ptr<RenderGroup>> m_renderGroups;
+    bool m_isDirty = false;
+
+    void Sort(ref_ptr<dp::OverlayTree> overlayTree);
+  };
+
+  array<RenderLayer, RenderLayer::LayerCountID> m_layers;
   vector<drape_ptr<UserMarkRenderGroup>> m_userMarkRenderGroups;
   set<TileKey> m_userMarkVisibility;
 
@@ -271,6 +301,10 @@ private:
   bool m_enable3dBuildings;
   bool m_isIsometry;
 
+  bool m_blockTapEvents;
+
+  bool m_choosePositionMode;
+
   Viewport m_viewport;
   UserEventStream m_userEventStream;
   TModelViewChanged m_modelViewChangedFn;
@@ -282,7 +316,9 @@ private:
   TDragEndedFn m_dragEndedFn;
   TRotatedFn m_rotatedFn;
 
-  unique_ptr<TileTree> m_tileTree;
+  ScreenBase m_lastReadedModelView;
+  TTilesCollection m_notFinishedTiles;
+
   int m_currentZoomLevel = -1;
 
   bool m_perspectiveDiscarded = false;
@@ -291,7 +327,6 @@ private:
   uint64_t m_maxGeneration;
   int m_mergeBucketsCounter = 0;
 
-#ifdef OMIM_OS_ANDROID
   struct FollowRouteData
   {
     FollowRouteData(int preferredZoomLevel,
@@ -311,7 +346,10 @@ private:
   };
 
   unique_ptr<FollowRouteData> m_pendingFollowRoute;
-#endif
+
+  vector<m2::TriangleD> m_dragBoundArea;
+
+  drape_ptr<SelectObjectMessage> m_selectObjectMessage;
 
 #ifdef DEBUG
   bool m_isTeardowned;

@@ -15,7 +15,7 @@ public final class ThemeSwitcher
 
   private static final Runnable sCheckProc = new Runnable()
   {
-    private final LocationHelper.LocationListener mLocationListener = new LocationHelper.LocationListener()
+    private final LocationHelper.LocationListener mLocationListener = new LocationHelper.SimpleLocationListener()
     {
       @Override
       public void onLocationUpdated(Location l)
@@ -29,10 +29,6 @@ public final class ThemeSwitcher
       {
         LocationHelper.INSTANCE.removeLocationListener(this);
       }
-
-      @Override
-      public void onCompassUpdated(long time, double magneticNorth, double trueNorth, double accuracy)
-      {}
     };
 
     @Override
@@ -42,7 +38,7 @@ public final class ThemeSwitcher
 
       if (RoutingController.get().isNavigating())
       {
-        Location last = LocationHelper.INSTANCE.getLastLocation();
+        Location last = LocationHelper.INSTANCE.getSavedLocation();
         if (last == null)
         {
           LocationHelper.INSTANCE.addLocationListener(mLocationListener, true);

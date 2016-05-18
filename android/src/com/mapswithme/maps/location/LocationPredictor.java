@@ -37,7 +37,7 @@ public class LocationPredictor
 
   public void resume()
   {
-    myPositionModeChanged(LocationState.INSTANCE.getLocationStateMode());
+    myPositionModeChanged(LocationState.getMode());
   }
 
   public void pause()
@@ -49,10 +49,10 @@ public class LocationPredictor
 
   public void myPositionModeChanged(final int mode)
   {
-    if (mode < LocationState.NOT_FOLLOW)
+    if (!LocationState.isTurnedOn(mode))
       mLastLocation = null;
 
-    mGeneratePredictions = (mode == LocationState.ROTATE_AND_FOLLOW);
+    mGeneratePredictions = (mode == LocationState.FOLLOW_AND_ROTATE);
     resetHandler();
   }
 
@@ -99,7 +99,7 @@ public class LocationPredictor
 
       final long elapsedMillis = info.getTime() - mLastLocation.getTime();
 
-      double[] newLatLon = Framework.predictLocation(info.getLatitude(), info.getLongitude(),
+      double[] newLatLon = Framework.nativePredictLocation(info.getLatitude(), info.getLongitude(),
               info.getAccuracy(), info.getBearing(),
               info.getSpeed(), elapsedMillis / 1000.0);
       info.setLatitude(newLatLon[0]);

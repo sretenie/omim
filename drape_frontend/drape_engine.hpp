@@ -13,6 +13,7 @@
 
 #include "geometry/polyline2d.hpp"
 #include "geometry/screenbase.hpp"
+#include "geometry/triangle2d.hpp"
 
 #include "base/strings_bundle.hpp"
 
@@ -20,7 +21,6 @@
 #include "std/mutex.hpp"
 
 namespace dp { class OGLContextFactory; }
-namespace gui { struct CountryInfo; }
 
 namespace df
 {
@@ -41,7 +41,12 @@ public:
            double vs,
            gui::TWidgetsInitInfo && info,
            pair<location::EMyPositionMode, bool> const & initialMyPositionMode,
-           bool allow3dBuildings)
+           bool allow3dBuildings,
+           bool blockTapEvents,
+           bool showChoosePositionMark,
+           vector<m2::TriangleD> && boundAreaTriangles,
+           bool firstLaunch,
+           bool isRoutingActive)
       : m_factory(factory)
       , m_stringsBundle(stringBundle)
       , m_viewport(viewport)
@@ -50,6 +55,11 @@ public:
       , m_info(move(info))
       , m_initialMyPositionMode(initialMyPositionMode)
       , m_allow3dBuildings(allow3dBuildings)
+      , m_blockTapEvents(blockTapEvents)
+      , m_showChoosePositionMark(showChoosePositionMark)
+      , m_boundAreaTriangles(move(boundAreaTriangles))
+      , m_isFirstLaunch(firstLaunch)
+      , m_isRoutingActive(isRoutingActive)
     {}
 
     ref_ptr<dp::OGLContextFactory> m_factory;
@@ -60,6 +70,11 @@ public:
     gui::TWidgetsInitInfo m_info;
     pair<location::EMyPositionMode, bool> m_initialMyPositionMode;
     bool m_allow3dBuildings;
+    bool m_blockTapEvents;
+    bool m_showChoosePositionMark;
+    vector<m2::TriangleD> m_boundAreaTriangles;
+    bool m_isFirstLaunch;
+    bool m_isRoutingActive;
   };
 
   DrapeEngine(Params && params);
@@ -69,7 +84,7 @@ public:
   void Invalidate();
 
   void AddTouchEvent(TouchEvent const & event);
-  void Scale(double  factor, m2::PointD const & pxPoint, bool isAnim);
+  void Scale(double factor, m2::PointD const & pxPoint, bool isAnim);
 
   /// if zoom == -1, then current zoom will not change
   void SetModelViewCenter(m2::PointD const & centerPt, int zoom, bool isAnim);
@@ -88,14 +103,11 @@ public:
   void InvalidateRect(m2::RectD const & rect);
   void UpdateMapStyle();
 
-  void SetCountryInfo(gui::CountryInfo const & info, bool isCurrentCountry);
-  void SetInvalidCountryInfo();
   void SetCompassInfo(location::CompassInfo const & info);
   void SetGpsInfo(location::GpsInfo const & info, bool isNavigable, location::RouteMatchingInfo const & routeInfo);
-  void MyPositionNextMode();
-  void CancelMyPosition();
+  void SwitchMyPositionNextMode();
+  void LoseLocation();
   void StopLocationFollow();
-  void InvalidateMyPosition();
   void SetMyPositionModeListener(location::TMyPositionModeChanged const & fn);
 
   using TTapEventInfoFn = FrontendRenderer::TTapEventInfoFn;
@@ -127,7 +139,6 @@ public:
   void SetRoutePoint(m2::PointD const & position, bool isStart, bool isValid);
 
   void SetWidgetLayout(gui::TWidgetsLayoutInfo && info);
-  gui::TWidgetsSizeInfo const & GetWidgetSizes();
 
   void Allow3dMode(bool allowPerspectiveInNavigation, bool allow3dBuildings, double rotationAngle, double angleFOV);
   void EnablePerspective(double rotationAngle, double angleFOV);
@@ -135,13 +146,23 @@ public:
   void UpdateGpsTrackPoints(vector<df::GpsTrackPoint> && toAdd, vector<uint32_t> && toRemove);
   void ClearGpsTrackPoints();
 
+  void EnableChoosePositionMode(bool enable, vector<m2::TriangleD> && boundAreaTriangles,
+                                bool hasPosition, m2::PointD const & position);
+  void BlockTapEvents(bool block);
+
+  void SetKineticScrollEnabled(bool enabled);
+
+  void SetTimeInBackground(double time);
+
+  void SetDisplacementMode(int mode);
+
 private:
   void AddUserEvent(UserEvent const & e);
   void ModelViewChanged(ScreenBase const & screen);
   void ModelViewChangedGuiThread(ScreenBase const & screen);
 
-  void MyPositionModeChanged(location::EMyPositionMode mode);
-  void TapEvent(m2::PointD const & pxPoint, bool isLong, bool isMyPosition, FeatureID const & feature);
+  void MyPositionModeChanged(location::EMyPositionMode mode, bool routingActive);
+  void TapEvent(TapInfo const & tapInfo);
   void UserPositionChanged(m2::PointD const & position);
   void ScaleStartEvent();
   void ScaleEndedEvent();
@@ -150,6 +171,7 @@ private:
   void RotatedEvent();
 
   void ResizeImpl(int w, int h);
+  void RecacheGui(bool needResetOldGui);
 
 private:
   drape_ptr<FrontendRenderer> m_frontend;
@@ -173,8 +195,10 @@ private:
   TRotatedFn m_rotatedListener;
 
   gui::TWidgetsInitInfo m_widgetsInfo;
-  gui::TWidgetsSizeInfo m_widgetSizes;
   gui::TWidgetsLayoutInfo m_widgetsLayout;
+
+  bool m_choosePositionMode = false;
+  bool m_kineticScrollEnabled = true;
 };
 
 } // namespace df

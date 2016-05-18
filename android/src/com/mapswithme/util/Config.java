@@ -17,6 +17,8 @@ public final class Config
   private static final String KEY_TTS_ENABLED = "TtsEnabled";
   private static final String KEY_TTS_LANGUAGE = "TtsLanguage";
 
+  private static final String KEY_DOWNLOADER_AUTO = "AutoDownloadEnabled";
+
   private static final String KEY_PREF_ZOOM_BUTTONS = "ZoomButtonsEnabled";
   private static final String KEY_PREF_STATISTICS = "StatisticsEnabled";
 
@@ -26,6 +28,7 @@ public final class Config
   private static final String KEY_MISC_DISCLAIMER_ACCEPTED = "IsDisclaimerApproved";
   private static final String KEY_MISC_KITKAT_MIGRATED = "KitKatMigrationCompleted";
   private static final String KEY_MISC_NEWS_LAST_VERSION = "WhatsNewShownVersion";
+  private static final String KEY_MISC_FIRST_START_DIALOG_SEEN = "FirstStartDialogSeen";
   private static final String KEY_MISC_UI_THEME = "UiTheme";
   private static final String KEY_MISC_UI_THEME_SETTINGS = "UiThemeSettings";
 
@@ -116,7 +119,7 @@ public final class Config
    * Increments counter of app starts.
    * @return Previous value before increment.
    */
-  public static int incrementLaunchNumber()
+  private static int incrementLaunchNumber()
   {
     return increment(KEY_APP_LAUNCH_NUMBER);
   }
@@ -193,6 +196,16 @@ public final class Config
     setString(KEY_TTS_LANGUAGE, language);
   }
 
+  public static boolean isAutodownloadEnabled()
+  {
+    return getBool(KEY_DOWNLOADER_AUTO, true);
+  }
+
+  public static void setAutodownloadEnabled(boolean enabled)
+  {
+    setBool(KEY_DOWNLOADER_AUTO, enabled);
+  }
+
   public static boolean showZoomButtons()
   {
     return getBool(KEY_PREF_ZOOM_BUTTONS, true);
@@ -220,7 +233,7 @@ public final class Config
 
   public static void setRatingApplied(Class<? extends DialogFragment> dialogFragmentClass)
   {
-    setBool(KEY_LIKES_RATED_DIALOG + dialogFragmentClass.getSimpleName(), true);
+    setBool(KEY_LIKES_RATED_DIALOG + dialogFragmentClass.getSimpleName());
   }
 
   public static boolean isSessionRated(int session)
@@ -240,7 +253,7 @@ public final class Config
 
   public static void acceptRoutingDisclaimer()
   {
-    setBool(KEY_MISC_DISCLAIMER_ACCEPTED, true);
+    setBool(KEY_MISC_DISCLAIMER_ACCEPTED);
   }
 
   public static boolean isKitKatMigrationComplete()
@@ -261,6 +274,16 @@ public final class Config
   public static void setWhatsNewShown()
   {
     setInt(KEY_MISC_NEWS_LAST_VERSION, BuildConfig.VERSION_CODE);
+  }
+
+  public static boolean isFirstStartDialogSeen()
+  {
+    return getBool(KEY_MISC_FIRST_START_DIALOG_SEEN);
+  }
+
+  public static void setFirstStartDialogSeen()
+  {
+    setBool(KEY_MISC_FIRST_START_DIALOG_SEEN);
   }
 
   public static String getCurrentUiTheme()

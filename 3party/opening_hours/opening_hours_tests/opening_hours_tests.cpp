@@ -312,7 +312,7 @@ BOOST_AUTO_TEST_CASE(OpeningHours_TestTimespan)
     span.SetStart(HourMinutes(10_h));
     span.SetEnd(HourMinutes(00_h));
 
-    BOOST_CHECK(!span.HasExtendedHours());
+    BOOST_CHECK(span.HasExtendedHours());
     BOOST_CHECK_EQUAL(ToString(span), "10:00-00:00");
   }
 
@@ -392,7 +392,19 @@ BOOST_AUTO_TEST_CASE(OpeningHours_TestWeekdayRange)
     range.AddNth(entry);
     BOOST_CHECK(range.HasNth());
   }
+  {
+    WeekdayRange range;
+    range.SetStart(Weekday::Monday);
+    range.SetEnd(Weekday::Sunday);
 
+    BOOST_CHECK(range.HasSunday());
+    BOOST_CHECK(range.HasMonday());
+    BOOST_CHECK(range.HasTuesday());
+    BOOST_CHECK(range.HasWednesday());
+    BOOST_CHECK(range.HasThursday());
+    BOOST_CHECK(range.HasFriday());
+    BOOST_CHECK(range.HasSaturday());
+  }
 }
 
 BOOST_AUTO_TEST_CASE(OpeningHours_Holidays)
@@ -781,6 +793,11 @@ BOOST_AUTO_TEST_CASE(OpeningHoursWeekdays_TestParseUnparse)
     auto const parsedUnparsed = ParseAndUnparse<osmoh::Weekdays>(rule);
     BOOST_CHECK_EQUAL(parsedUnparsed, rule);
   }
+  {
+    auto const rule = "Sa";
+    auto const parsedUnparsed = ParseAndUnparse<osmoh::Weekdays>(rule);
+    BOOST_CHECK_EQUAL(parsedUnparsed, rule);
+  }
 }
 
 BOOST_AUTO_TEST_CASE(OpeningHoursMonthdayRanges_TestParseUnparse)
@@ -907,6 +924,11 @@ BOOST_AUTO_TEST_CASE(OpeningHoursWeekRanges_TestParseUnparse)
 
 BOOST_AUTO_TEST_CASE(OpeningHoursRuleSequence_TestParseUnparse)
 {
+  {
+    auto const rule = "";
+    auto const parsedUnparsed = ParseAndUnparse<osmoh::TRuleSequences>(rule);
+    BOOST_CHECK_EQUAL(parsedUnparsed, rule);
+  }
   {
     auto const rule = "24/7";
     auto const parsedUnparsed = ParseAndUnparse<osmoh::TRuleSequences>(rule);
@@ -1050,6 +1072,12 @@ BOOST_AUTO_TEST_CASE(OpeningHoursRuleSequence_TestParseUnparse)
   }
   {
     auto const rule = "Mo-Fr closed \"always closed\"";
+
+    auto const parsedUnparsed = ParseAndUnparse<osmoh::TRuleSequences>(rule);
+    BOOST_CHECK_EQUAL(parsedUnparsed, rule);
+  }
+  {
+    auto const rule = "Sa; Su";
 
     auto const parsedUnparsed = ParseAndUnparse<osmoh::TRuleSequences>(rule);
     BOOST_CHECK_EQUAL(parsedUnparsed, rule);
