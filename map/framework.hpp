@@ -409,12 +409,6 @@ private:
 
   void OnUpdateGpsTrackPointsCallback(vector<pair<size_t, location::GpsTrackInfo>> && toAdd,
                                       pair<size_t, size_t> const & toRemove);
-public:
-  using TDownloadMapRequest = function<void (storage::TIndex const &)>;
-  void SetDownloadMapCallback(TDownloadMapRequest callback) { m_downloadMapRequestFn = callback; }
-
-private:
-  TDownloadMapRequest m_downloadMapRequestFn;
   bool GetGroupCountryIdFromFeature(FeatureType const & ft, string & name) const;
 
 public:
