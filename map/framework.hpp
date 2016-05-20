@@ -467,6 +467,7 @@ public:
   /// - Check minimal visible scale according to downloaded countries.
   void ShowRect(m2::RectD const & rect, int maxScale = -1);
   void ShowRect(m2::AnyRectD const & rect);
+  void ShowRect(double lat, double lon, double zoom);
 
   void GetTouchRect(m2::PointD const & center, uint32_t pxRadius, m2::AnyRectD & rect);
 

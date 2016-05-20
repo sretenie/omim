@@ -953,6 +953,11 @@ void Framework::ShowRect(m2::AnyRectD const & rect)
   CallDrapeFunction(bind(&df::DrapeEngine::SetModelViewAnyRect, _1, rect, true));
 }
 
+void Framework::ShowRect(double lat, double lon, double zoom)
+{
+  CallDrapeFunction(bind(&df::DrapeEngine::SetModelViewCenter, _1, m2::PointD(lat, lon), zoom, true));
+}
+
 void Framework::GetTouchRect(m2::PointD const & center, uint32_t pxRadius, m2::AnyRectD & rect)
 {
   m_currentModelView.GetTouchRect(center, static_cast<double>(pxRadius), rect);
