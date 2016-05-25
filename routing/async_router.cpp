@@ -290,8 +290,8 @@ void AsyncRouter::CalculateRoute()
   {
     LOG(LDEBUG, ("Calculating the route from", startPoint, "to", finalPoint, "startDirection", startDirection));
 
-    if (absentFetcher)
-      absentFetcher->GenerateRequest(startPoint, finalPoint);
+//    if (absentFetcher)
+//      absentFetcher->GenerateRequest(startPoint, finalPoint);
 
     // Run basic request.
     code = router->CalculateRoute(startPoint, startDirection, finalPoint, delegate->GetDelegate(), route);
@@ -318,12 +318,12 @@ void AsyncRouter::CalculateRoute()
 
   // Check online response if we have.
   vector<string> absent;
-  if (absentFetcher && needFetchAbsent)
-  {
-    absentFetcher->GetAbsentCountries(absent);
-    for (string const & country : absent)
-      route.AddAbsentCountry(country);
-  }
+//  if (absentFetcher && needFetchAbsent)
+//  {
+//    absentFetcher->GetAbsentCountries(absent);
+//    for (string const & country : absent)
+//      route.AddAbsentCountry(country);
+//  }
 
   if (!absent.empty() && code == IRouter::NoError)
     code = IRouter::NeedMoreMaps;
