@@ -129,6 +129,13 @@ struct TurnItem
   {
   }
 
+  TurnItem(uint32_t idx, TurnDirection t, uint32_t exitNum, bool keepAnyway, PedestrianDirection p,
+           string sourceName, string targetName)
+      : m_index(idx), m_turn(t), m_exitNum(exitNum), m_keepAnyway(keepAnyway)
+      , m_pedestrianTurn(p), m_sourceName(sourceName), m_targetName(targetName)
+  {
+  }
+
   bool operator==(TurnItem const & rhs) const
   {
     return m_index == rhs.m_index && m_turn == rhs.m_turn && m_lanes == rhs.m_lanes &&

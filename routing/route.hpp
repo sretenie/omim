@@ -72,6 +72,8 @@ public:
   string const & GetRouterId() const { return m_router; }
   m2::PolylineD const & GetPoly() const { return m_poly.GetPolyline(); }
   TTurns const & GetTurns() const { return m_turns; }
+  TTimes const & GetTimes() const { return m_times; }
+  TStreets const & GetStreets() const { return m_streets; }
   void GetTurnsDistances(vector<double> & distances) const;
   string const & GetName() const { return m_name; }
   bool IsValid() const { return (m_poly.GetPolyline().GetSize() > 1); }

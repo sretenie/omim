@@ -73,6 +73,8 @@ public:
 
   void SetRouter(unique_ptr<IRouter> && router, unique_ptr<OnlineAbsentCountriesFetcher> && fetcher);
 
+  void AddRoute(Route & route);
+
   /// @param[in] startPoint and endPoint in mercator
   /// @param[in] timeoutSec timeout in seconds, if zero then there is no timeout
   void BuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,

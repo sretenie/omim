@@ -2240,6 +2240,30 @@ void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, 
   m_routingSession.BuildRoute(start, finish, readyCallback, m_progressCallback, timeoutSec);
 }
 
+void Framework::AddRoute(routing::Route & route, bool animate)
+{
+    if (IsRoutingActive())
+      CloseRouting();
+
+    double const kRouteScaleMultiplier = 1.5;
+
+    SetLastUsedRouter(m_currentRouterType);
+    m_routingSession.SetUserCurrentPosition(route.GetPoly().GetPoint(0));
+
+    m_routingSession.AddRoute(route);
+
+    InsertRoute(m_routingSession.GetRoute());
+    StopLocationFollow();
+    if (animate)
+    {
+        m2::RectD routeRect = m_routingSession.GetRoute().GetPoly().GetLimitRect();
+        LOG(LWARNING, ("RectD for route session", DebugPrint(routeRect)));
+        LOG(LWARNING, ("Route points: ", DebugPrint(m_routingSession.GetRoute().GetPoly().GetPoints())));
+        routeRect.Scale(kRouteScaleMultiplier);
+        ShowRect(routeRect, -1);
+    }
+}
+
 void Framework::FollowRoute()
 {
   ASSERT(m_drapeEngine != nullptr, ());
@@ -2360,17 +2384,17 @@ void Framework::CheckLocationForRouting(GpsInfo const & info)
   RoutingSession::State state = m_routingSession.OnLocationPositionChanged(info, m_model.GetIndex());
   if (state == RoutingSession::RouteNeedRebuild)
   {
-    auto readyCallback = [this] (Route const & route, IRouter::ResultCode code)
-    {
-      if (code == IRouter::NoError)
-      {
-        RemoveRoute(false /* deactivateFollowing */);
-        InsertRoute(route);
-      }
-    };
+//    auto readyCallback = [this] (Route const & route, IRouter::ResultCode code)
+//    {
+//      if (code == IRouter::NoError)
+//      {
+//        RemoveRoute(false /* deactivateFollowing */);
+//        InsertRoute(route);
+//      }
+//    };
 
-    m_routingSession.RebuildRoute(MercatorBounds::FromLatLon(info.m_latitude, info.m_longitude),
-                                  readyCallback, m_progressCallback, 0 /* timeoutSec */);
+//    m_routingSession.RebuildRoute(MercatorBounds::FromLatLon(info.m_latitude, info.m_longitude),
+//                                  readyCallback, m_progressCallback, 0 /* timeoutSec */);
   }
 }
 
