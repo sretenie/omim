@@ -452,6 +452,21 @@ public:
   inline m2::PointD PtoG(m2::PointD const & p) const { return m_currentModelView.PtoG(p); }
   inline m2::PointD GtoP(m2::PointD const & p) const { return m_currentModelView.GtoP(p); }
   inline m2::PointD GtoP3d(m2::PointD const & p) const { return m_currentModelView.PtoP3d(m_currentModelView.GtoP(p)); }
+  inline m2::PointD PtoP3d(m2::PointD const & p) const { return m_currentModelView.PtoP3d(p); }
+  inline m2::PointD P3dToP(m2::PointD const & p) const { return m_currentModelView.P3dtoP(p); }
+  inline m2::PointD GtoPWith3d(m2::PointD const & p) const {
+      return m_currentModelView.isPerspective()
+              ? m_currentModelView.PtoP3d(m_currentModelView.GtoP(p))
+              : m_currentModelView.GtoP(p);
+  }
+  inline m2::PointD PtoGWith3d(m2::PointD const & p) const {
+      return m_currentModelView.isPerspective()
+              ? m_currentModelView.PtoG(m_currentModelView.P3dtoP(p))
+              : m_currentModelView.PtoG(p);;
+  }
+  inline bool IsPerspectiveMode() const {
+      return m_currentModelView.isPerspective();
+  }
 
   /// Show all model by it's world rect.
   void ShowAll();

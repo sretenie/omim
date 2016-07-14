@@ -2257,8 +2257,6 @@ void Framework::AddRoute(routing::Route & route, bool animate)
     if (animate)
     {
         m2::RectD routeRect = m_routingSession.GetRoute().GetPoly().GetLimitRect();
-        LOG(LWARNING, ("RectD for route session", DebugPrint(routeRect)));
-        LOG(LWARNING, ("Route points: ", DebugPrint(m_routingSession.GetRoute().GetPoly().GetPoints())));
         routeRect.Scale(kRouteScaleMultiplier);
         ShowRect(routeRect, -1);
     }
