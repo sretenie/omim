@@ -2387,7 +2387,8 @@ void Framework::CheckLocationForRouting(GpsInfo const & info)
 //      if (code == IRouter::NoError)
 //      {
 //        RemoveRoute(false /* deactivateFollowing */);
-//        InsertRoute(route);
+//        InsertRoute(m_routingSession.GetRoute());.
+        m_routingSession.ResetRouteNeedRebuildState();
 //      }
 //    };
 
