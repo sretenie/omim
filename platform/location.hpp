@@ -168,6 +168,9 @@ namespace location
     /// Turn after m_turn. Returns NoTurn if there is no turns after.
     routing::turns::TurnDirection m_nextTurn;
     uint32_t m_exitNum;
+    size_t m_curIndex;
+    double m_distToEnd;
+    double m_distToTurnM;
     //@}
     int m_time;
     // m_lanes contains lane information on the edge before the turn.

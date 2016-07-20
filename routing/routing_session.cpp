@@ -290,13 +290,17 @@ void RoutingSession::GetRouteFollowingInfo(FollowingInfo & info) const
     return;
   }
 
-  formatDistFn(m_route.GetCurrentDistanceToEndMeters(), info.m_distToTarget, info.m_targetUnitsSuffix);
+  double distanceToEnd = m_route.GetCurrentDistanceToEndMeters();
+  formatDistFn(distanceToEnd, info.m_distToTarget, info.m_targetUnitsSuffix);
+  info.m_distToEnd = distanceToEnd;
+  info.m_curIndex = m_route.GetFollowedPolyline().GetCurrentIter().m_ind;
 
   double distanceToTurnMeters = 0.;
   turns::TurnItem turn;
   m_route.GetCurrentTurn(distanceToTurnMeters, turn);
   formatDistFn(distanceToTurnMeters, info.m_distToTurn, info.m_turnUnitsSuffix);
   info.m_turn = turn.m_turn;
+  info.m_distToTurnM = distanceToTurnMeters;
 
   // The turn after the next one.
   if (m_routingSettings.m_showTurnAfterNext)
