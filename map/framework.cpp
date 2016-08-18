@@ -2243,7 +2243,7 @@ void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, 
 void Framework::AddRoute(routing::Route & route, bool animate)
 {
     if (IsRoutingActive())
-      CloseRouting();
+      CloseRouting(false);
 
     double const kRouteScaleMultiplier = 1.5;
 
@@ -2253,7 +2253,7 @@ void Framework::AddRoute(routing::Route & route, bool animate)
     m_routingSession.AddRoute(route);
 
     InsertRoute(m_routingSession.GetRoute());
-    StopLocationFollow();
+//    StopLocationFollow();
     if (animate)
     {
         m2::RectD routeRect = m_routingSession.GetRoute().GetPoly().GetLimitRect();
@@ -2352,6 +2352,16 @@ void Framework::CloseRouting()
   }
   m_routingSession.Reset();
   RemoveRoute(true /* deactivateFollowing */);
+}
+
+void Framework::CloseRouting(bool deactivateFollowing)
+{
+  if (m_routingSession.IsBuilt())
+  {
+    m_routingSession.EmitCloseRoutingEvent();
+  }
+  m_routingSession.Reset();
+  RemoveRoute(deactivateFollowing);
 }
 
 void Framework::InsertRoute(Route const & route)

@@ -626,6 +626,7 @@ public:
   void SetRouteProgressListener(TRouteProgressCallback const & progressCallback) { m_progressCallback = progressCallback; }
   void FollowRoute();
   void CloseRouting();
+  void CloseRouting(bool deactivateFollowing);
   void GetRouteFollowingInfo(location::FollowingInfo & info) const { m_routingSession.GetRouteFollowingInfo(info); }
   m2::PointD GetRouteEndPoint() const { return m_routingSession.GetEndPoint(); }
   routing::RouterType GetLastUsedRouter() const;
