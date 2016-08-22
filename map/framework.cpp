@@ -2240,6 +2240,8 @@ void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, 
   if (rebuild)
   {
      m_routingSession.RebuildRoute(start, finish, readyCallback, m_progressCallback, timeoutSec);
+     if (!m_routingSession.IsFollowing())
+         FollowRoute();
   }
   else
   {
