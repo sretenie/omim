@@ -2227,17 +2227,24 @@ void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, 
 }
 
 void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
-                           routing::RoutingSession::TReadyCallback const & readyCallback)
+                           routing::RoutingSession::TReadyCallback const & readyCallback, bool rebuild)
 {
   ASSERT_THREAD_CHECKER(m_threadChecker, ("BuildRoute"));
   ASSERT(m_drapeEngine != nullptr, ());
 
-  if (IsRoutingActive())
+  if (!rebuild && IsRoutingActive())
     CloseRouting();
 
   SetLastUsedRouter(m_currentRouterType);
   m_routingSession.SetUserCurrentPosition(start);
-  m_routingSession.BuildRoute(start, finish, readyCallback, m_progressCallback, timeoutSec);
+  if (rebuild)
+  {
+     m_routingSession.RebuildRoute(start, finish, readyCallback, m_progressCallback, timeoutSec);
+  }
+  else
+  {
+     m_routingSession.BuildRoute(start, finish, readyCallback, m_progressCallback, timeoutSec);
+  }
 }
 
 void Framework::AddRoute(routing::Route & route, bool animate)

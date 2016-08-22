@@ -80,6 +80,10 @@ public:
   void BuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
                   TReadyCallback const & readyCallback,
                   TProgressCallback const & progressCallback, uint32_t timeoutSec);
+  void RebuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
+                                    TReadyCallback const & readyCallback,
+                                    TProgressCallback const & progressCallback,
+                                    uint32_t timeoutSec);
   void RebuildRoute(m2::PointD const & startPoint, TReadyCallback const & readyCallback,
                     TProgressCallback const & progressCallback, uint32_t timeoutSec);
 

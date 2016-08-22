@@ -99,6 +99,17 @@ void RoutingSession::BuildRoute(m2::PointD const & startPoint, m2::PointD const 
   RebuildRoute(startPoint, readyCallback, progressCallback, timeoutSec);
 }
 
+void RoutingSession::RebuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
+                                  TReadyCallback const & readyCallback,
+                                  TProgressCallback const & progressCallback,
+                                  uint32_t timeoutSec)
+{
+    ASSERT(m_router != nullptr, ());
+    m_lastGoodPosition = startPoint;
+    m_endPoint = endPoint;
+    RebuildRoute(startPoint, readyCallback, progressCallback, timeoutSec);
+}
+
 void RoutingSession::RebuildRoute(m2::PointD const & startPoint,
     TReadyCallback const & readyCallback,
     TProgressCallback const & progressCallback, uint32_t timeoutSec)
