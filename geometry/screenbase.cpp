@@ -423,3 +423,28 @@ bool ScreenBase::IsReverseProjection3d(m2::PointD const & pt) const
   Vector3dT const perspectivePoint = normalizedPoint * m_Pto3d;
   return perspectivePoint(0, 3) < 0.0;
 }
+
+m2::PointD ScreenBase::CalcOffsetGWithZoom(m2::PointD const & center, double dx, double dy, double zoom) const
+{
+    MatrixT pToG = math::Shift( /// 5. shifting on (E0, N0)
+                 math::Rotate( /// 4. rotating on the screen angle
+                     math::Scale( /// 3. scaling to translate pixel sizes to global
+                         math::Scale( /// 2. swapping the Y axis??? why??? supposed to be a rotation on -pi / 2 here.
+                             math::Shift( /// 1. shifting for the pixel center to become (0, 0)
+                                 math::Identity<double, 3>(),
+                                 - m_PixelRect.Center()
+                                 ),
+                             1,
+                             -1
+                             ),
+                         zoom,
+                         zoom
+                         ),
+                     m_Angle.cos(),
+                     m_Angle.sin()
+                 ),
+                 center
+             );
+    MatrixT gToP = math::Inverse(pToG);
+    return ((center * gToP) - m2::PointD(dx, dy)) * pToG;
+}

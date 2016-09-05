@@ -1011,6 +1011,96 @@ void Framework::Scale(double factor, m2::PointD const & pxPoint, bool isAnim)
   CallDrapeFunction(bind(&df::DrapeEngine::Scale, _1, factor, pxPoint, isAnim));
 }
 
+int Framework::GetTargetScaleCenter(m2::PointD const & center)
+{
+    m2::AnyRectD targetRect;
+
+    m2::AnyRectD const r = m_currentModelView.GlobalRect();
+    targetRect = m2::AnyRectD(center, r.Angle(), r.GetLocalRect());
+
+    m2::RectD const & worldR = df::GetWorldRect();
+
+    ScreenBase tmp = m_currentModelView;
+    tmp.SetFromRect(targetRect);
+    tmp = ScaleInto(tmp, worldR);
+    df::VisualParams const & vp = df::VisualParams::Instance();
+    int fixedScale = df::GetDrawTileScale(tmp, vp.GetTileSize(), vp.GetVisualScale());
+    LOG(LINFO, ("ScreenBase fixedScale: ", fixedScale));
+    return fixedScale;
+}
+
+ScreenBase const Framework::ScaleInto(ScreenBase const & screen, m2::RectD boundRect)
+{
+  boundRect.Inflate(-1.0E-9, -1.0E-9);
+
+  ScreenBase res = screen;
+
+  double scale = 1;
+
+  m2::RectD clipRect = res.ClipRect();
+
+  ASSERT(boundRect.IsPointInside(clipRect.Center()), ("center point should be inside boundRect"));
+
+  if (clipRect.minX() < boundRect.minX())
+  {
+    double k = (boundRect.minX() - clipRect.Center().x) / (clipRect.minX() - clipRect.Center().x);
+    scale /= k;
+    clipRect.Scale(k);
+  }
+  if (clipRect.maxX() > boundRect.maxX())
+  {
+    double k = (boundRect.maxX() - clipRect.Center().x) / (clipRect.maxX() - clipRect.Center().x);
+    scale /= k;
+    clipRect.Scale(k);
+  }
+  if (clipRect.minY() < boundRect.minY())
+  {
+    double k = (boundRect.minY() - clipRect.Center().y) / (clipRect.minY() - clipRect.Center().y);
+    scale /= k;
+    clipRect.Scale(k);
+  }
+  if (clipRect.maxY() > boundRect.maxY())
+  {
+    double k = (boundRect.maxY() - clipRect.Center().y) / (clipRect.maxY() - clipRect.Center().y);
+    scale /= k;
+    clipRect.Scale(k);
+  }
+
+  res.Scale(scale);
+  res.SetOrg(clipRect.Center());
+
+  return res;
+}
+
+m2::PointD Framework::CalcOffsetGWithZoom(m2::PointD const & center, double dx, double dy, double zoom)
+{
+    m2::PointD targetCenter = center;
+    ang::AngleD angle;
+    m2::RectD localRect;
+
+    ScreenBase const & currentScreen = m_currentModelView;
+    ScreenBase screen = currentScreen;
+
+    double const scale3d = screen.PixelRect().SizeX() / screen.PixelRectIn3d().SizeX();
+
+    angle = screen.GlobalRect().Angle();
+    localRect = df::GetRectForDrawScale(zoom, center);
+    localRect.Offset(-center);
+    localRect.Scale(scale3d);
+
+    double const aspectRatio = screen.PixelRect().SizeY() / screen.PixelRect().SizeX();
+    if (aspectRatio > 1.0)
+      localRect.Inflate(0.0, localRect.SizeY() * 0.5 * aspectRatio);
+    else
+      localRect.Inflate(localRect.SizeX() * 0.5 / aspectRatio, 0.0);
+
+    m2::AnyRectD targetAnyRect = m2::AnyRectD(targetCenter, angle, localRect);
+    m2::RectD targetLocalRect = targetAnyRect.GetLocalRect();
+    m2::RectD const pixelRect = screen.PixelRect();
+    double fixedZoom = max(targetLocalRect.SizeX() / pixelRect.SizeX(), targetLocalRect.SizeY() / pixelRect.SizeY());
+    return m_currentModelView.CalcOffsetGWithZoom(center, dx, dy, fixedZoom);
+}
+
 void Framework::TouchEvent(df::TouchEvent const & touch)
 {
   CallDrapeFunction(bind(&df::DrapeEngine::AddTouchEvent, _1, touch));

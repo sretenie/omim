@@ -171,6 +171,8 @@ public:
   {
     return (m_GtoP == src.m_GtoP) && (m_PtoG == src.m_PtoG);
   }
+
+  m2::PointD CalcOffsetGWithZoom(m2::PointD const & center, double dx, double dy, double zoom) const;
 };
 
 /// checking whether the s1 transforms into s2 without scaling, only with shift and rotation

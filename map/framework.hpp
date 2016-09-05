@@ -506,6 +506,9 @@ public:
   void Scale(double factor, bool isAnim);
   void Scale(double factor, m2::PointD const & pxPoint, bool isAnim);
 
+  int GetTargetScaleCenter(m2::PointD const & center);
+  m2::PointD CalcOffsetGWithZoom(m2::PointD const & center, double dx, double dy, double zoom);
+
   void TouchEvent(df::TouchEvent const & touch);
   //@}
 
@@ -694,6 +697,8 @@ private:
                         storage::TCountriesVec const & absentCountries);
   void MatchLocationToRoute(location::GpsInfo & info, location::RouteMatchingInfo & routeMatchingInfo) const;
   string GetRoutingErrorMessage(routing::IRouter::ResultCode code);
+
+  static ScreenBase const ScaleInto(ScreenBase const & screen, m2::RectD boundRect);
 
   TRouteBuildingCallback m_routingCallback;
   TRouteProgressCallback m_progressCallback;
