@@ -1688,6 +1688,11 @@ void Framework::SetRenderingEnabled(bool enable)
     m_drapeEngine->SetRenderingEnabled(enable);
 }
 
+void Framework::ResetLocationFollow()
+{
+  CallDrapeFunction(bind(&df::DrapeEngine::StopLocationFollow, _1));
+}
+
 void Framework::ConnectToGpsTracker()
 {
   m_connectToGpsTrack = true;

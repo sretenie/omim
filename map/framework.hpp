@@ -360,6 +360,7 @@ private:
   void LoadViewport();
 
 public:
+  void ResetLocationFollow();
   void ConnectToGpsTracker();
   void DisconnectFromGpsTracker();
 
