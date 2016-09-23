@@ -83,6 +83,8 @@ public:
   double GetCurrentDistanceToEndMeters() const;
   double GetMercatorDistanceFromBegin() const;
 
+  string GetMeRouteAsJson() const;
+
   /// \brief GetCurrentTurn returns information about the nearest turn.
   /// \param distanceToTurnMeters is a distance from current position to the nearest turn.
   /// \param turn is information about the nearest turn.

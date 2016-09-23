@@ -51,8 +51,15 @@ public:
                       RouterDelegate::TProgressCallback const & progressCallback,
                       uint32_t timeoutSec);
 
+  void CalculateRouteBlocking(m2::PointD const & startPoint, m2::PointD const & direction,
+                      m2::PointD const & finalPoint, TReadyCallback const & readyCallback,
+                      RouterDelegate::TProgressCallback const & progressCallback,
+                      uint32_t timeoutSec);
+
   /// Interrupt routing and clear buffers
   void ClearState();
+
+  inline void SetOnlyBlocking(bool onlyBlocking) { m_onlyBlocking = onlyBlocking; }
 
 private:
   /// Worker thread function
@@ -108,6 +115,7 @@ private:
   condition_variable m_threadCondVar;
   bool m_threadExit;
   bool m_hasRequest;
+  bool m_onlyBlocking;
 
   /// Current request parameters
   bool m_clearState;

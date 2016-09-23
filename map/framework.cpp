@@ -2342,6 +2342,15 @@ void Framework::BuildRoute(m2::PointD const & start, m2::PointD const & finish, 
   }
 }
 
+void Framework::BuildRouteBlocking(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
+                           routing::RoutingSession::TReadyCallback const & readyCallback)
+{
+  ASSERT_THREAD_CHECKER(m_threadChecker, ("BuildRoute"));
+  ASSERT(m_drapeEngine != nullptr, ());
+
+  m_routingSession.BuildRouteBlocking(start, finish, readyCallback, m_progressCallback, timeoutSec);
+}
+
 void Framework::AddRoute(routing::Route & route, bool animate)
 {
     if (IsRoutingActive())

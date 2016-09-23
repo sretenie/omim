@@ -13,6 +13,10 @@
 
 #include "std/numeric.hpp"
 
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/document.h"
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/writer.h"
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/stringbuffer.h"
+
 namespace routing
 {
 namespace
@@ -91,6 +95,126 @@ double Route::GetMercatorDistanceFromBegin() const
 {
   //TODO Maybe better to return FollowedRoute and user will call GetMercatorDistance etc. by itself
   return m_poly.GetMercatorDistanceFromBegin();
+}
+
+
+string Route::GetMeRouteAsJson() const
+{
+    rapidjson::Document d;
+    d.SetObject();
+    rapidjson::Document::AllocatorType& allocator = d.GetAllocator();
+
+    // points
+    rapidjson::Value points;
+    points.SetArray();
+    size_t const polySz = m_poly.GetPolyline().GetSize();
+    for (int i = 0; i < polySz; i++)
+    {
+        m2::PointD routePoint = m_poly.GetPolyline().GetPoint(i);
+        rapidjson::Value point;
+        point.SetObject();
+        point.AddMember("latitude", MercatorBounds::YToLat(routePoint.y), allocator);
+        point.AddMember("longitude", MercatorBounds::XToLon(routePoint.x), allocator);
+        points.PushBack(point, allocator);
+    }
+    d.AddMember("points", points, allocator);
+
+    // turns
+    rapidjson::Value turns;
+    turns.SetArray();
+    vector<double> routeTurns;
+    GetTurnsDistances(routeTurns);
+    for (int i = 0; i < routeTurns.size(); i++)
+    {
+        turns.PushBack(routeTurns[i], allocator);
+    }
+    d.AddMember("turns", turns, allocator);
+
+    // times
+    rapidjson::Value times;
+    times.SetArray();
+    size_t const timeLen = m_times.size();
+    for (size_t i = 0; i < timeLen; i++)
+    {
+      TTimeItem routeTime = m_times[i];
+      rapidjson::Value time;
+      time.SetObject();
+      time.AddMember("time", routeTime.second, allocator);
+      time.AddMember("index", routeTime.first, allocator);
+      times.PushBack(time, allocator);
+    }
+    d.AddMember("times", times, allocator);
+
+    // streets
+    rapidjson::Value streets;
+    streets.SetArray();
+    size_t const streetsLen = m_streets.size();
+    for (size_t i = 0; i < streetsLen; i++)
+    {
+      TStreetItem routeStreet = m_streets[i];
+      rapidjson::Value street;
+      street.SetObject();
+      rapidjson::Value routeStreetName(routeStreet.second.c_str(), allocator);
+      street.AddMember("name", routeStreetName, allocator);
+      street.AddMember("index", routeStreet.first, allocator);
+      streets.PushBack(street, allocator);
+    }
+    d.AddMember("streets", streets, allocator);
+
+    // info
+    rapidjson::Value instructions;
+    instructions.SetArray();
+    size_t const turnsLen = m_turns.size();
+    uint32_t previousIndex = 0;
+    for (size_t i = 0; i < turnsLen; i++)
+    {
+        turns::TurnItem routeTurn = GetTurns()[i];
+        rapidjson::Value instruction;
+        instruction.SetObject();
+        rapidjson::Value streetSource(routeTurn.m_sourceName.c_str(), allocator);
+        instruction.AddMember("streetSource", streetSource, allocator);
+        rapidjson::Value streetTarget(routeTurn.m_targetName.c_str(), allocator);
+        instruction.AddMember("streetTarget", streetTarget, allocator);
+        instruction.AddMember("exitNumber", routeTurn.m_exitNum, allocator);
+        instruction.AddMember("exited", (routeTurn.m_exitNum != 0), allocator);
+        instruction.AddMember("turnDirection", static_cast<int>(routeTurn.m_turn), allocator);
+        instruction.AddMember("pedestrianDirection", static_cast<int>(routeTurn.m_pedestrianTurn), allocator);
+        instruction.AddMember("startInterval", previousIndex, allocator);
+        instruction.AddMember("endInterval", routeTurn.m_index, allocator);
+        instruction.AddMember("time", m_times[i].second, allocator);
+        instruction.AddMember("keepAnyways", routeTurn.m_keepAnyway, allocator);
+        instructions.PushBack(instruction, allocator);
+        previousIndex = routeTurn.m_index;
+    }
+    d.AddMember("instructions", instructions, allocator);
+
+    // absentCountries
+    rapidjson::Value absentCountries;
+    absentCountries.SetArray();
+    for (string const & country : m_absentCountries) {
+        absentCountries.PushBack(country.c_str(), allocator);
+    }
+    d.AddMember("absentCountries", absentCountries, allocator);
+
+    // additional info
+    double mercatorDistance;
+    if (polySz > 0)
+    {
+        mercatorDistance = routing::turns::CalculateMercatorDistanceAlongPath(0, polySz - 1, m_poly.GetPolyline().GetPoints());
+    }
+    else
+    {
+        mercatorDistance = 0;
+    }
+    d.AddMember("distanceMercator", mercatorDistance, allocator);
+    d.AddMember("distance", GetTotalDistanceMeters(), allocator);
+    d.AddMember("duration", GetTotalTimeSec(), allocator);
+    d.AddMember("name", GetRouterId().c_str(), allocator);
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    d.Accept(writer);
+    return buffer.GetString();
 }
 
 uint32_t Route::GetTotalTimeSec() const

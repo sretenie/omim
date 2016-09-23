@@ -99,6 +99,20 @@ void RoutingSession::BuildRoute(m2::PointD const & startPoint, m2::PointD const 
   RebuildRoute(startPoint, readyCallback, progressCallback, timeoutSec);
 }
 
+void RoutingSession::BuildRouteBlocking(m2::PointD const & startPoint, m2::PointD const & endPoint,
+                                TReadyCallback const & readyCallback,
+                                TProgressCallback const & progressCallback,
+                                uint32_t timeoutSec)
+{
+  ASSERT(m_router != nullptr, ());
+  ASSERT_NOT_EQUAL(m_endPoint, m2::PointD::Zero(), ("End point was not set"));
+  m_lastGoodPosition = startPoint;
+  m_router->ClearState();
+  m_router->CalculateRouteBlocking(startPoint, startPoint - m_lastGoodPosition, endPoint,
+                           DoReadyCallback(*this, readyCallback, m_routeSessionMutex),
+                           progressCallback, timeoutSec);
+}
+
 void RoutingSession::RebuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
                                   TReadyCallback const & readyCallback,
                                   TProgressCallback const & progressCallback,

@@ -615,6 +615,8 @@ public:
   void BuildRoute(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec);
   void BuildRoute(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
                   routing::RoutingSession::TReadyCallback const & readyCallback, bool rebuild);
+  void BuildRouteBlocking(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
+                  routing::RoutingSession::TReadyCallback const & readyCallback);
   void AddRoute(routing::Route & route, bool animate);
   void ChangeRoute(routing::Route & route);
   // FollowRoute has a bug where the router follows the route even if the method hads't been called.

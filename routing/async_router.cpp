@@ -153,6 +153,8 @@ void AsyncRouter::CalculateRoute(m2::PointD const & startPoint, m2::PointD const
 {
   unique_lock<mutex> ul(m_guard);
 
+  m_onlyBlocking = false;
+
   m_startPoint = startPoint;
   m_startDirection = direction;
   m_finalPoint = finalPoint;
@@ -163,6 +165,33 @@ void AsyncRouter::CalculateRoute(m2::PointD const & startPoint, m2::PointD const
 
   m_hasRequest = true;
   m_threadCondVar.notify_one();
+}
+
+void AsyncRouter::CalculateRouteBlocking(m2::PointD const & startPoint, m2::PointD const & direction,
+                                 m2::PointD const & finalPoint, TReadyCallback const & readyCallback,
+                                 RouterDelegate::TProgressCallback const & progressCallback,
+                                 uint32_t timeoutSec)
+{
+  {
+        unique_lock<mutex> ul(m_guard);
+
+        m_onlyBlocking = true;
+
+        m_startPoint = startPoint;
+        m_startDirection = direction;
+        m_finalPoint = finalPoint;
+
+        if (m_clearState && m_router)
+        {
+          m_router->ClearState();
+        }
+        ResetDelegate();
+
+        m_delegate = make_shared<RouterDelegateProxy>(readyCallback, m_pointCheckCallback, progressCallback, timeoutSec);
+
+        m_hasRequest = true;
+  }
+  CalculateRoute();
 }
 
 void AsyncRouter::ClearState()
@@ -234,7 +263,7 @@ void AsyncRouter::ThreadFunc()
   {
     {
       unique_lock<mutex> ul(m_guard);
-      m_threadCondVar.wait(ul, [this](){ return m_threadExit || m_hasRequest || m_clearState; });
+      m_threadCondVar.wait(ul, [this](){ return !m_onlyBlocking && (m_threadExit || m_hasRequest || m_clearState); });
 
       if (m_clearState && m_router)
       {
@@ -249,7 +278,7 @@ void AsyncRouter::ThreadFunc()
         continue;
     }
 
-    CalculateRoute();
+      CalculateRoute();
   }
 }
 
