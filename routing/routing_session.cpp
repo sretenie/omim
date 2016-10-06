@@ -85,6 +85,23 @@ void RoutingSession::AddRoute(Route & route)
     m_state = RouteNotStarted;
 }
 
+void RoutingSession::ChangeRoute(Route & route)
+{
+    ASSERT(m_router != nullptr, ());
+    m_lastGoodPosition = route.GetPoly().GetPoint(0);
+    m_endPoint = route.GetPoly().GetPoint(route.GetPoly().GetPoints().size());
+    m_router->ClearState();
+    m_routingRebuildCount = -1; // -1 for the first rebuild.
+
+    RemoveRoute();
+    m_state = RouteNotStarted;
+    m_routingRebuildCount++;
+    m_lastCompletionPercent = 0;
+
+    AssignRoute(route, IRouter::ResultCode::NoError);
+    m_state = RouteNotStarted;
+}
+
 void RoutingSession::BuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
                                 TReadyCallback const & readyCallback,
                                 TProgressCallback const & progressCallback,

@@ -2376,7 +2376,7 @@ void Framework::AddRoute(routing::Route & route, bool animate)
 void Framework::ChangeRoute(routing::Route & route)
 {
     RemoveRoute(false /* deactivateFollowing */);
-    m_routingSession.AddRoute(route);
+    m_routingSession.ChangeRoute(route);
     InsertRoute(m_routingSession.GetRoute());
 //    if (!m_routingSession.IsFollowing())
 //        FollowRoute();

@@ -217,6 +217,79 @@ string Route::GetMeRouteAsJson() const
     return buffer.GetString();
 }
 
+void Route::FromJson(const string routeJson)
+{
+    LOG(LINFO, ("routeJson: ", routeJson));
+    const char* json = routeJson.c_str();
+    rapidjson::Document document;
+    LOG(LINFO, ("json: ", json));
+    document.Parse<0>(json);
+    assert(document.IsObject());
+
+    // points
+    vector<m2::PointD> points;
+    assert(document.IsObject());
+    assert(document.HasMember("points"));
+    const rapidjson::Value& jsonPoints = document["points"];
+    assert(jsonPoints.IsArray());
+    LOG(LINFO, ("jsonPointsSize: ", jsonPoints.Size()));
+    for (rapidjson::SizeType i = 0; i < jsonPoints.Size(); i++) {
+        const rapidjson::Value& item = jsonPoints[i];
+        double latitude = item["latitude"].GetDouble();
+        LOG(LINFO, ("latitude: ", latitude));
+        double longitude = item["longitude"].GetDouble();
+        LOG(LINFO, ("longitude: ", longitude));
+        points.push_back(m2::PointD(MercatorBounds::FromLatLon(latitude, longitude)));
+    }
+
+    // route times
+    routing::Route::TTimes routeTimes;
+    const rapidjson::Value& jsonRouteTimes = document["times"];
+    assert(jsonRouteTimes.IsArray());
+    for (rapidjson::SizeType i = 0; i < jsonRouteTimes.Size(); i++) {
+        const rapidjson::Value& item = jsonRouteTimes[i];
+        double time = item["latitude"].GetDouble();
+        double index = item["longitude"].GetInt();
+        routeTimes.push_back(routing::Route::TTimeItem(index, time));
+    }
+
+    // streets
+    routing::Route::TStreets streets;
+    const rapidjson::Value& jsonStreets = document["streets"];
+    assert(jsonStreets.IsArray());
+    for (rapidjson::SizeType i = 0; i < jsonStreets.Size(); i++) {
+        const rapidjson::Value& item = jsonStreets[i];
+        string street = item["name"].GetString();
+        double index = item["index"].GetInt();
+        streets.push_back(routing::Route::TStreetItem(index, street));
+    }
+
+    routing::Route::TTurns routeTurns;
+    const rapidjson::Value& jsonTurns = document["instructions"];
+    assert(jsonTurns.IsArray());
+    for (rapidjson::SizeType i = 0; i < jsonTurns.Size(); i++) {
+        const rapidjson::Value& item = jsonTurns[i];
+        uint32_t index = item["endInterval"].GetInt();
+        uint32_t exitNum = item["exitNumber"].GetInt();
+        bool keepAnyways = item["keepAnyways"].GetBool_();
+        uint32_t turnDirection = item["turnDirection"].GetInt();
+        routing::turns::TurnDirection cTurnDirection = static_cast<routing::turns::TurnDirection>(turnDirection);
+        uint32_t pedestrianTurnDirection = item["pedestrianDirection"].GetInt();
+        routing::turns::PedestrianDirection cPedestrianTurnDirection = static_cast<routing::turns::PedestrianDirection>(pedestrianTurnDirection);
+        string streetSource = item["streetSource"].GetString();
+        string streetTarget = item["streetTarget"].GetString();
+
+        routeTurns.push_back(routing::turns::TurnItem(index, cTurnDirection, exitNum,
+          keepAnyways, cPedestrianTurnDirection, streetSource, streetTarget));
+    }
+
+    LOG(LINFO, ("points.sz: ", points.size(), ", routeTurns: ", routeTurns.size(), ", routeTimes: ", routeTimes.size(), ", streets: ", streets.size()));
+    SetGeometry(points.begin(), points.end());
+    SetTurnInstructions(routeTurns);
+    SetSectionTimes(routeTimes);
+    SetStreetNames(streets);
+}
+
 uint32_t Route::GetTotalTimeSec() const
 {
   return m_times.empty() ? 0 : m_times.back().second;

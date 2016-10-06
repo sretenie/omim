@@ -611,6 +611,7 @@ public:
   bool IsRouteBuilding() const { return m_routingSession.IsBuilding(); }
   bool IsOnRoute() const { return m_routingSession.IsOnRoute(); }
   bool IsRouteNavigable() const { return m_routingSession.IsNavigable(); }
+  bool IsRouteValid() const { return m_routingSession.GetRoute().IsValid(); }
   void BuildRoute(m2::PointD const & finish, uint32_t timeoutSec);
   void BuildRoute(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec);
   void BuildRoute(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
@@ -622,7 +623,7 @@ public:
   // FollowRoute has a bug where the router follows the route even if the method hads't been called.
   // This method was added because we do not want to break the behaviour that is familiar to our users.
   bool DisableFollowMode();
-  bool isFollowing() const { return m_routingSession.IsFollowing(); }
+  bool IsFollowing() const { return m_routingSession.IsFollowing(); }
   /// @TODO(AlexZ): Warning! These two routing callbacks are the only callbacks which are not called in the main thread context.
   /// UI code should take it into an account. This is a result of current implementation, that can be improved:
   /// Drape core calls some RunOnGuiThread with "this" pointers, and it causes crashes on Android, when Drape engine is destroyed
