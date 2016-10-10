@@ -129,6 +129,34 @@ Iter FollowedPolyline::GetClosestProjection(m2::RectD const & posRect,
   return res;
 }
 
+template <class DistanceFn>
+Iter FollowedPolyline::GetClosestProjectionLimited(m2::RectD const & posRect,
+                                            DistanceFn const & distFn, uint32_t targetIndex) const
+{
+  Iter res;
+  double minDist = numeric_limits<double>::max();
+
+  m2::PointD const currPos = posRect.Center();
+  size_t const count = m_poly.GetSize() - 1;
+  for (size_t i = m_current.m_ind; i < count; ++i)
+  {
+    m2::PointD const pt = m_segProj[i](currPos);
+
+    if (!posRect.IsPointInside(pt))
+      continue;
+
+    Iter it(pt, i);
+    double const dp = distFn(it);
+    if (dp < minDist && i <= targetIndex)
+    {
+      res = it;
+      minDist = dp;
+    }
+  }
+
+  return res;
+}
+
 Iter FollowedPolyline::UpdateProjectionByPrediction(m2::RectD const & posRect,
                                                     double predictDistance) const
 {
@@ -149,6 +177,26 @@ Iter FollowedPolyline::UpdateProjectionByPrediction(m2::RectD const & posRect,
   return res;
 }
 
+Iter FollowedPolyline::UpdateProjectionByPredictionLimited(m2::RectD const & posRect,
+                                                    double predictDistance, uint32_t targetIndex) const
+{
+  ASSERT(m_current.IsValid(), ());
+  ASSERT_LESS(m_current.m_ind, m_poly.GetSize() - 1, ());
+
+  if (predictDistance <= 0.0)
+    return UpdateProjectionLimited(posRect, targetIndex);
+
+  Iter res;
+  res = GetClosestProjectionLimited(posRect, [&](Iter const & it)
+  {
+    return fabs(GetDistanceM(m_current, it) - predictDistance);
+  }, targetIndex);
+
+  if (res.IsValid())
+    m_current = res;
+  return res;
+}
+
 Iter FollowedPolyline::UpdateProjection(m2::RectD const & posRect) const
 {
   ASSERT(m_current.IsValid(), ());
@@ -160,6 +208,23 @@ Iter FollowedPolyline::UpdateProjection(m2::RectD const & posRect) const
   {
     return MercatorBounds::DistanceOnEarth(it.m_pt, currPos);
   });
+
+  if (res.IsValid())
+    m_current = res;
+  return res;
+}
+
+Iter FollowedPolyline::UpdateProjectionLimited(m2::RectD const & posRect, uint32_t targetIndex) const
+{
+  ASSERT(m_current.IsValid(), ());
+  ASSERT_LESS(m_current.m_ind, m_poly.GetSize() - 1, ());
+
+  Iter res;
+  m2::PointD const currPos = posRect.Center();
+  res = GetClosestProjectionLimited(posRect, [&](Iter const & it)
+  {
+    return MercatorBounds::DistanceOnEarth(it.m_pt, currPos);
+  }, targetIndex);
 
   if (res.IsValid())
     m_current = res;

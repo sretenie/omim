@@ -99,7 +99,7 @@ void RoutingSession::ChangeRoute(Route & route)
     m_lastCompletionPercent = 0;
 
     AssignRoute(route, IRouter::ResultCode::NoError);
-    m_state = RouteNotStarted;
+    m_state = OnRoute;
 }
 
 void RoutingSession::BuildRoute(m2::PointD const & startPoint, m2::PointD const & endPoint,
@@ -295,6 +295,99 @@ RoutingSession::State RoutingSession::OnLocationPositionChanged(GpsInfo const & 
           "RouteTracking_RouteNeedRebuild", params,
           alohalytics::Location::FromLatLon(MercatorBounds::YToLat(lastGoodPoint.y),
                                             MercatorBounds::XToLon(lastGoodPoint.x)));
+    }
+  }
+
+  return m_state;
+}
+
+RoutingSession::State RoutingSession::OnLocationPositionChangedLimited(GpsInfo const & info, Index const & index,
+                                                                       uint32_t targetIndex)
+ {
+  ASSERT(m_state != RoutingNotActive, ());
+  ASSERT(m_router != nullptr, ());
+
+  if (m_state == RouteNeedRebuild || m_state == RouteFinished || m_state == RouteBuilding ||
+      m_state == RouteNotReady || m_state == RouteNoFollowing)
+    return m_state;
+
+  threads::MutexGuard guard(m_routeSessionMutex);
+  UNUSED_VALUE(guard);
+  ASSERT(m_route.IsValid(), ());
+
+  m_turnNotificationsMgr.SetSpeedMetersPerSecond(info.m_speed);
+
+  if (m_route.MoveIteratorLimited(info, targetIndex))
+  {
+    m_moveAwayCounter = 0;
+    m_lastDistance = 0.0;
+
+    if (m_route.IsCurrentOnEnd())
+    {
+      m_passedDistanceOnRouteMeters += m_route.GetTotalDistanceMeters();
+      m_state = RouteFinished;
+
+      alohalytics::TStringMap params = {{"router", m_route.GetRouterId()},
+                                        {"passedDistance", strings::to_string(m_passedDistanceOnRouteMeters)},
+                                        {"rebuildCount", strings::to_string(m_routingRebuildCount)}};
+      alohalytics::LogEvent("RouteTracking_ReachedDestination", params);
+    }
+    else
+    {
+      m_state = OnRoute;
+
+      // Warning signals checks
+      if (m_routingSettings.m_speedCameraWarning && !m_speedWarningSignal)
+      {
+        double const warningDistanceM = max(kSpeedCameraMinimalWarningMeters,
+                                            info.m_speed * kSpeedCameraWarningSeconds);
+        SpeedCameraRestriction cam(0, 0);
+        double const camDistance = GetDistanceToCurrentCamM(cam, index);
+        if (kInvalidSpeedCameraDistance != camDistance && camDistance < warningDistanceM)
+        {
+          if (cam.m_index > m_lastWarnedSpeedCameraIndex && info.m_speed > cam.m_maxSpeedKmH * kKmHToMps)
+          {
+            m_speedWarningSignal = true;
+            m_lastWarnedSpeedCameraIndex = cam.m_index;
+          }
+        }
+      }
+    }
+    m_lastGoodPosition = m_userCurrentPosition;
+  }
+  else
+  {
+    // Distance from the last known projection on route
+    // (check if we are moving far from the last known projection).
+    auto const & lastGoodPoint = m_route.GetFollowedPolyline().GetCurrentIter().m_pt;
+    double const dist = MercatorBounds::DistanceOnEarth(lastGoodPoint,
+                                                        MercatorBounds::FromLatLon(info.m_latitude, info.m_longitude));
+    if (my::AlmostEqualAbs(dist, m_lastDistance, kRunawayDistanceSensitivityMeters))
+        return m_state;
+    if (dist > m_lastDistance)
+    {
+      ++m_moveAwayCounter;
+      m_lastDistance = dist;
+    }
+
+    if (m_moveAwayCounter > kOnRouteMissedCount)
+    {
+      m_passedDistanceOnRouteMeters += m_route.GetCurrentDistanceFromBeginMeters();
+      m_state = RouteNeedRebuild;
+      alohalytics::TStringMap params = {
+          {"router", m_route.GetRouterId()},
+          {"percent", strings::to_string(GetCompletionPercent())},
+          {"passedDistance", strings::to_string(m_passedDistanceOnRouteMeters)},
+          {"rebuildCount", strings::to_string(m_routingRebuildCount)}};
+      alohalytics::LogEvent(
+          "RouteTracking_RouteNeedRebuild", params,
+          alohalytics::Location::FromLatLon(MercatorBounds::YToLat(lastGoodPoint.y),
+                                            MercatorBounds::XToLon(lastGoodPoint.x)));
+    }
+
+    if (m_route.GetFollowedPolyline().GetCurrentIter().m_ind > targetIndex)
+    {
+        m_state = RouteNeedRebuild;
     }
   }
 

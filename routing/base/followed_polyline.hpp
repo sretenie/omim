@@ -51,7 +51,9 @@ public:
   double GetDistanceM(Iter const & it1, Iter const & it2) const;
 
   Iter UpdateProjectionByPrediction(m2::RectD const & posRect, double predictDistance) const;
+  Iter UpdateProjectionByPredictionLimited(m2::RectD const & posRect, double predictDistance, uint32_t targetIndex) const;
   Iter UpdateProjection(m2::RectD const & posRect) const;
+  Iter UpdateProjectionLimited(m2::RectD const & posRect, uint32_t targetIndex) const;
 
   Iter Begin() const;
   Iter End() const;
@@ -60,6 +62,8 @@ public:
 private:
   template <class DistanceFn>
   Iter GetClosestProjection(m2::RectD const & posRect, DistanceFn const & distFn) const;
+  template <class DistanceFn>
+  Iter GetClosestProjectionLimited(m2::RectD const & posRect, DistanceFn const & distFn, uint32_t targetIndex) const;
 
   void Update();
 

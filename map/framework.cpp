@@ -189,6 +189,42 @@ void Framework::OnLocationUpdate(GpsInfo const & info)
                          m_routingSession.IsNavigable(), routeMatchingInfo));
 }
 
+void Framework::OnLocationUpdateLimited(GpsInfo const & info, uint32_t targetIndex)
+{
+#ifdef FIXED_LOCATION
+  GpsInfo rInfo(info);
+
+  // get fixed coordinates
+  m_fixedPos.GetLon(rInfo.m_longitude);
+  m_fixedPos.GetLat(rInfo.m_latitude);
+
+  // pretend like GPS position
+  rInfo.m_horizontalAccuracy = 5.0;
+
+  if (m_fixedPos.HasNorth())
+  {
+    // pass compass value (for devices without compass)
+    CompassInfo compass;
+    m_fixedPos.GetNorth(compass.m_bearing);
+    OnCompassUpdate(compass);
+  }
+
+#else
+  GpsInfo rInfo(info);
+#endif
+
+#ifdef OMIM_OS_ANDROID
+  m_lastGPSInfo.reset(new GpsInfo(rInfo));
+#endif
+  location::RouteMatchingInfo routeMatchingInfo;
+  CheckLocationForRoutingLimited(rInfo, targetIndex);
+
+  MatchLocationToRoute(rInfo, routeMatchingInfo);
+
+  CallDrapeFunction(bind(&df::DrapeEngine::SetGpsInfo, _1, rInfo,
+                         m_routingSession.IsNavigable(), routeMatchingInfo));
+}
+
 void Framework::OnCompassUpdate(CompassInfo const & info)
 {
 #ifdef FIXED_LOCATION
@@ -2514,6 +2550,18 @@ void Framework::CheckLocationForRouting(GpsInfo const & info)
 
 //    m_routingSession.RebuildRoute(MercatorBounds::FromLatLon(info.m_latitude, info.m_longitude),
 //                                  readyCallback, m_progressCallback, 0 /* timeoutSec */);
+  }
+}
+
+void Framework::CheckLocationForRoutingLimited(GpsInfo const & info, uint32_t targetIndex)
+{
+  if (!IsRoutingActive())
+    return;
+
+  RoutingSession::State state = m_routingSession.OnLocationPositionChangedLimited(info, m_model.GetIndex(), targetIndex);
+  if (state == RoutingSession::RouteNeedRebuild)
+  {
+        m_routingSession.ResetRouteNeedRebuildState();
   }
 }
 

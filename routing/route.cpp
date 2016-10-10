@@ -475,6 +475,27 @@ bool Route::MoveIterator(location::GpsInfo const & info) const
   return res.IsValid();
 }
 
+bool Route::MoveIteratorLimited(location::GpsInfo const & info, uint32_t targetIndex) const
+{
+  double predictDistance = -1.0;
+  if (m_currentTime > 0.0 && info.HasSpeed())
+  {
+    /// @todo Need to distinguish GPS and WiFi locations.
+    /// They may have different time metrics in case of incorrect system time on a device.
+    double const deltaT = info.m_timestamp - m_currentTime;
+    if (deltaT > 0.0 && deltaT < kLocationTimeThreshold)
+      predictDistance = info.m_speed * deltaT;
+  }
+
+  m2::RectD const rect = MercatorBounds::MetresToXY(
+        info.m_longitude, info.m_latitude,
+        max(m_routingSettings.m_matchingThresholdM, info.m_horizontalAccuracy));
+  FollowedPolyline::Iter const res = m_poly.UpdateProjectionByPredictionLimited(rect, predictDistance, targetIndex);
+  if (m_simplifiedPoly.IsValid())
+    m_simplifiedPoly.UpdateProjectionByPredictionLimited(rect, predictDistance, targetIndex);
+  return res.IsValid();
+}
+
 double Route::GetPolySegAngle(size_t ind) const
 {
   size_t const polySz = m_poly.GetPolyline().GetSize();

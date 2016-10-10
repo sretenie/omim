@@ -111,6 +111,7 @@ public:
 
   /// @return true  If position was updated successfully (projection within gps error radius).
   bool MoveIterator(location::GpsInfo const & info) const;
+  bool MoveIteratorLimited(location::GpsInfo const & info, uint32_t targetIndex) const;
 
   void MatchLocationToRoute(location::GpsInfo & location, location::RouteMatchingInfo & routeMatchingInfo) const;
 

@@ -323,6 +323,7 @@ public:
   //@{
   void OnLocationError(location::TLocationError error);
   void OnLocationUpdate(location::GpsInfo const & info);
+  void OnLocationUpdateLimited(location::GpsInfo const & info, uint32_t targetIndex);
   void OnCompassUpdate(location::CompassInfo const & info);
   void SwitchMyPositionNextMode();
   /// Should be set before Drape initialization. Guarantees that fn is called in main thread context.
@@ -610,6 +611,7 @@ public:
   bool IsRouteBuilt() const { return m_routingSession.IsBuilt(); }
   bool IsRouteBuilding() const { return m_routingSession.IsBuilding(); }
   bool IsOnRoute() const { return m_routingSession.IsOnRoute(); }
+  bool IsRouteFinished() const { return m_routingSession.IsFinished(); }
   bool IsRouteNavigable() const { return m_routingSession.IsNavigable(); }
   bool IsRouteValid() const { return m_routingSession.GetRoute().IsValid(); }
   void BuildRoute(m2::PointD const & finish, uint32_t timeoutSec);
@@ -697,6 +699,7 @@ private:
 
   void InsertRoute(routing::Route const & route);
   void CheckLocationForRouting(location::GpsInfo const & info);
+  void CheckLocationForRoutingLimited(location::GpsInfo const & info, uint32_t targetIndex);
   void CallRouteBuilded(routing::IRouter::ResultCode code,
                         storage::TCountriesVec const & absentCountries);
   void MatchLocationToRoute(location::GpsInfo & info, location::RouteMatchingInfo & routeMatchingInfo) const;

@@ -98,12 +98,14 @@ public:
   bool IsBuilding() const { return (m_state == RouteBuilding); }
   bool IsOnRoute() const { return (m_state == OnRoute); }
   bool IsFollowing() const { return m_isFollowing; }
+  bool IsFinished() const { return m_state == RouteFinished; }
   void ResetRouteNeedRebuildState() { m_state = RouteNotStarted; }
   void Reset();
 
   Route const & GetRoute() const { return m_route; }
 
   State OnLocationPositionChanged(location::GpsInfo const & info, Index const & index);
+  State OnLocationPositionChangedLimited(location::GpsInfo const & info, Index const & index, uint32_t targetIndex);
   void GetRouteFollowingInfo(location::FollowingInfo & info) const;
 
   void MatchLocationToRoute(location::GpsInfo & location,
