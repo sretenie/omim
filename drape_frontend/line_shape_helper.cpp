@@ -96,6 +96,11 @@ void ConstructLineSegments(vector<m2::PointD> const & path, vector<LineSegment> 
   {
     m2::PointF const p1 = m2::PointF(prevPoint.x, prevPoint.y);
     m2::PointF const p2 = m2::PointF(path[i].x, path[i].y);
+    if ((p2.x == -1 && p2.y == -1) || (p1.x == -1 && p1.y == -1))
+    {
+        prevPoint = path[i];
+        continue;
+    }
     if (p1.EqualDxDy(p2, 1.0E-5))
       continue;
 
