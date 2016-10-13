@@ -51,7 +51,10 @@
 #define CELL2FEATURE_TMP_EXT ".c2f.tmp"
 
 #define COUNTRIES_FILE "countries.txt"
+#define REGIONS_POLYGONS_FILE "regions_polygons.txt"
 #define COUNTRIES_OBSOLETE_FILE "countries_obsolete.txt"
+#define REGION_POLY_FILE "poly/region_"
+#define REGION_POLY_FORMAT ".poly"
 
 #define WORLD_FILE_NAME "World"
 #define WORLD_COASTS_FILE_NAME "WorldCoasts"

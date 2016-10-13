@@ -1,5 +1,7 @@
 #pragma once
 
+#include "geometry/polyline2d.hpp"
+
 #include "storage/country.hpp"
 #include "storage/country_name_getter.hpp"
 #include "storage/country_tree.hpp"
@@ -25,6 +27,30 @@
 
 namespace storage
 {
+
+class RegionPolygon
+{
+public:
+  RegionPolygon()
+      : m_index(-1)
+  {
+  }
+
+  template <class TIter>
+  RegionPolygon(uint32_t index, TIter begin, TIter end)
+      : m_index(index),
+        m_poly(begin, end)
+  {
+  }
+
+  uint32_t const & GetIndex() const { return m_index; }
+  m2::PolylineD const & GetPoly() const { return m_poly; }
+
+private:
+  uint32_t m_index;
+  m2::PolylineD m_poly;
+};
+
 struct CountryIdAndName
 {
   TCountryId m_id;
@@ -145,6 +171,8 @@ public:
   using TProgressFunction = function<void(TCountryId const &, MapFilesDownloader::TProgress const &)>;
   using TQueue = list<QueuedCountry>;
 
+  RegionPolygon LoadRegionPolygon(uint32_t regionId, string const & dataDir);
+
 private:
   /// We support only one simultaneous request at the moment
   unique_ptr<MapFilesDownloader> m_downloader;
@@ -153,6 +181,7 @@ private:
   int64_t m_currentVersion;
 
   TCountryTree m_countries;
+  RegionPolygon m_regionPolygon;
 
   /// @todo. It appeared that our application uses m_queue from
   /// different threads without any synchronization. To reproduce it

@@ -9,8 +9,6 @@
 #include "geometry/point2d.hpp"
 #include "geometry/simplification.hpp"
 
-#include "base/logging.hpp"
-
 #include "std/numeric.hpp"
 
 #include "3party/Alohalytics/src/cereal/include/external/rapidjson/document.h"
@@ -219,26 +217,20 @@ string Route::GetMeRouteAsJson() const
 
 void Route::FromJson(const string routeJson)
 {
-    LOG(LINFO, ("routeJson: ", routeJson));
     const char* json = routeJson.c_str();
     rapidjson::Document document;
-    LOG(LINFO, ("json: ", json));
     document.Parse<0>(json);
     assert(document.IsObject());
 
     // points
     vector<m2::PointD> points;
-    assert(document.IsObject());
     assert(document.HasMember("points"));
     const rapidjson::Value& jsonPoints = document["points"];
     assert(jsonPoints.IsArray());
-    LOG(LINFO, ("jsonPointsSize: ", jsonPoints.Size()));
     for (rapidjson::SizeType i = 0; i < jsonPoints.Size(); i++) {
         const rapidjson::Value& item = jsonPoints[i];
         double latitude = item["latitude"].GetDouble();
-        LOG(LINFO, ("latitude: ", latitude));
         double longitude = item["longitude"].GetDouble();
-        LOG(LINFO, ("longitude: ", longitude));
         points.push_back(m2::PointD(MercatorBounds::FromLatLon(latitude, longitude)));
     }
 
@@ -283,7 +275,6 @@ void Route::FromJson(const string routeJson)
           keepAnyways, cPedestrianTurnDirection, streetSource, streetTarget));
     }
 
-    LOG(LINFO, ("points.sz: ", points.size(), ", routeTurns: ", routeTurns.size(), ", routeTimes: ", routeTimes.size(), ", streets: ", streets.size()));
     SetGeometry(points.begin(), points.end());
     SetTurnInstructions(routeTurns);
     SetSectionTimes(routeTimes);

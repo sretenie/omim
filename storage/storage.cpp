@@ -1,6 +1,9 @@
 #include "storage/http_map_files_downloader.hpp"
 #include "storage/storage.hpp"
 
+#include "geometry/polyline2d.hpp"
+#include "geometry/mercator.hpp"
+
 #include "defines.hpp"
 
 #include "platform/local_country_file_utils.hpp"
@@ -27,6 +30,10 @@
 #include "std/target_os.hpp"
 
 #include "3party/Alohalytics/src/alohalytics.h"
+
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/document.h"
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/writer.h"
+#include "3party/Alohalytics/src/cereal/include/external/rapidjson/stringbuffer.h"
 
 using namespace downloader;
 using namespace platform;
@@ -648,6 +655,79 @@ void Storage::LoadCountriesFile(string const & pathToCountriesFile, string const
     if (m_currentVersion < 0)
       LOG(LERROR, ("Can't load countries file", pathToCountriesFile));
   }
+}
+
+RegionPolygon Storage::LoadRegionPolygon(uint32_t regionId, string const & dataDir)
+{
+    if (m_regionPolygon.GetIndex() == regionId)
+    {
+        return m_regionPolygon;
+    }
+
+    string regionIdStr = std::to_string(regionId);
+    string fileName = REGION_POLY_FILE + regionIdStr + REGION_POLY_FORMAT;
+    string regionFile = my::JoinFoldersToPath(dataDir, fileName);
+    if (!dataDir.empty())
+    {
+      Platform & platform = GetPlatform();
+      platform.MkDir(regionFile);
+    }
+
+    RegionPolygon regionPolygon;
+    string jsonRegionPolygons;
+    LOG(LINFO, ("Region filename: ", regionFile));
+    try
+    {
+        ReaderPtr<Reader>(GetPlatform().GetReader(regionFile)).ReadAsString(jsonRegionPolygons);
+    }
+    catch(RootException const & e)
+    {
+      LOG(LWARNING, ("Error reading file ", regionFile, " : ", e.what()));
+      return regionPolygon;
+    }
+
+    const char* json = jsonRegionPolygons.c_str();
+    rapidjson::Document document;
+    document.Parse<0>(json);
+    assert(document.IsObject());
+    assert(document.HasMember("location"));
+
+    const rapidjson::Value& location = document["location"];
+    assert(location.IsObject());
+    assert(location.HasMember("coordinates"));
+
+    const rapidjson::Value& coordinates = location["coordinates"];
+    assert(coordinates.IsArray());
+
+    vector<m2::PointD> points;
+    for (rapidjson::SizeType i = 0; i < coordinates.Size(); i++)
+    {
+        const rapidjson::Value& pointsContainer = coordinates[i];
+        assert(pointsContainer.IsArray());
+        for (rapidjson::SizeType k = 0; k < pointsContainer.Size(); k++)
+        {
+            const rapidjson::Value& polygon = pointsContainer[k];
+            assert(polygon.IsArray());
+            for (rapidjson::SizeType m = 0; m < polygon.Size(); m++)
+            {
+                const rapidjson::Value& line = polygon[m];
+                assert(line.IsArray());
+                double longitude = line[rapidjson::SizeType(0)].GetDouble();
+                double latitude = line[rapidjson::SizeType(1)].GetDouble();
+                points.push_back(m2::PointD(MercatorBounds::FromLatLon(latitude, longitude)));
+            }
+            points.push_back(m2::PointD(-1, -1));
+        }
+    }
+
+    assert(document.HasMember("id"));
+    const rapidjson::Value& jsonRegionId = document["id"];
+    assert(jsonRegionId.IsInt());
+    uint32_t targetRegionId = jsonRegionId.GetInt();
+
+    regionPolygon = RegionPolygon(targetRegionId, points.begin(), points.end());
+    m_regionPolygon = regionPolygon;
+    return regionPolygon;
 }
 
 int Storage::Subscribe(TChangeCountryFunction const & change, TProgressFunction const & progress)

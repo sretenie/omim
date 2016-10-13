@@ -2442,6 +2442,26 @@ bool Framework::DisableFollowMode()
   return disabled;
 }
 
+void Framework::ShowRegionBorder(uint32_t regionId)
+{
+    string regionPath = GetPlatform().SettingsDir();
+    storage::RegionPolygon regionPoly = Storage().LoadRegionPolygon(regionId, regionPath);
+    if (m_drapeEngine == nullptr || regionPoly.GetIndex() < 1)
+      return;
+
+    if (regionPoly.GetPoly().GetSize() < 2)
+    {
+      LOG(LWARNING, ("Invalid track - only", regionPoly.GetPoly().GetSize(), "point(s)."));
+      return;
+    }
+
+    vector<double> turns;
+
+    df::ColorConstant const routeColor = (m_currentRouterType == RouterType::Pedestrian) ?
+                                          df::RoutePedestrian : df::Route;
+    m_drapeEngine->AddRoute(regionPoly.GetPoly(), turns, routeColor);
+}
+
 void Framework::SetRouter(RouterType type)
 {
   ASSERT_THREAD_CHECKER(m_threadChecker, ("SetRouter"));

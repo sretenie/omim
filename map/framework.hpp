@@ -626,6 +626,7 @@ public:
   // This method was added because we do not want to break the behaviour that is familiar to our users.
   bool DisableFollowMode();
   bool IsFollowing() const { return m_routingSession.IsFollowing(); }
+  void ShowRegionBorder(uint32_t regionId);
   /// @TODO(AlexZ): Warning! These two routing callbacks are the only callbacks which are not called in the main thread context.
   /// UI code should take it into an account. This is a result of current implementation, that can be improved:
   /// Drape core calls some RunOnGuiThread with "this" pointers, and it causes crashes on Android, when Drape engine is destroyed
