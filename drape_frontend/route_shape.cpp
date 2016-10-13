@@ -283,6 +283,11 @@ void RouteShape::PrepareGeometry(bool isRoute, vector<m2::PointD> const & path,
 void RouteShape::CacheRouteSign(ref_ptr<dp::TextureManager> mng, RouteSignData & routeSignData)
 {
   dp::TextureManager::SymbolRegion symbol;
+  bool hideSymbol = routeSignData.m_position.x == -1 || routeSignData.m_position.y == -1;
+  if (hideSymbol)
+  {
+      return;
+  }
   mng->GetSymbolRegion(routeSignData.m_isStart ? "route_from" : "route_to", symbol);
 
   m2::RectF const & texRect = symbol.GetTexRect();
