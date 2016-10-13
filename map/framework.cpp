@@ -2456,9 +2456,7 @@ void Framework::ShowRegionBorder(uint32_t regionId)
     }
 
     vector<double> turns;
-
-    df::ColorConstant const routeColor = (m_currentRouterType == RouterType::Pedestrian) ?
-                                          df::RoutePedestrian : df::Route;
+    df::ColorConstant const routeColor = df::RegionPoly;
     m_drapeEngine->AddRoute(regionPoly.GetPoly(), turns, routeColor);
 }
 
