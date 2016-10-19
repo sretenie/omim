@@ -113,26 +113,27 @@ struct TurnItem
         m_turn(TurnDirection::NoTurn),
         m_exitNum(0),
         m_keepAnyway(false),
-        m_pedestrianTurn(PedestrianDirection::None)
+        m_pedestrianTurn(PedestrianDirection::None),
+        m_wayPoint(false)
   {
   }
 
   TurnItem(uint32_t idx, TurnDirection t, uint32_t exitNum = 0)
       : m_index(idx), m_turn(t), m_exitNum(exitNum), m_keepAnyway(false)
-      , m_pedestrianTurn(PedestrianDirection::None)
+      , m_pedestrianTurn(PedestrianDirection::None), m_wayPoint(false)
   {
   }
 
   TurnItem(uint32_t idx, PedestrianDirection p)
       : m_index(idx), m_turn(TurnDirection::NoTurn), m_exitNum(0), m_keepAnyway(false)
-      , m_pedestrianTurn(p)
+      , m_pedestrianTurn(p), m_wayPoint(false)
   {
   }
 
   TurnItem(uint32_t idx, TurnDirection t, uint32_t exitNum, bool keepAnyway, PedestrianDirection p,
-           string sourceName, string targetName)
+           string sourceName, string targetName, bool wayPoint)
       : m_index(idx), m_turn(t), m_exitNum(exitNum), m_keepAnyway(keepAnyway)
-      , m_pedestrianTurn(p), m_sourceName(sourceName), m_targetName(targetName)
+      , m_pedestrianTurn(p), m_sourceName(sourceName), m_targetName(targetName), m_wayPoint(wayPoint)
   {
   }
 
@@ -155,6 +156,8 @@ struct TurnItem
    * and shall be demonstrated to an end user.
    */
   bool m_keepAnyway;
+
+  bool m_wayPoint;
   /*!
    * \brief m_pedestrianTurn is type of corresponding direction for a pedestrian, or None
    * if there is no pedestrian specific direction

@@ -620,8 +620,9 @@ public:
                   routing::RoutingSession::TReadyCallback const & readyCallback, bool rebuild);
   void BuildRouteBlocking(m2::PointD const & start, m2::PointD const & finish, uint32_t timeoutSec,
                   routing::RoutingSession::TReadyCallback const & readyCallback);
-  void AddRoute(routing::Route & route, bool animate);
-  void ChangeRoute(routing::Route & route);
+  void AddRoute(routing::Route & route, bool animate, uint32_t targetIndex);
+  void ChangeRoute(routing::Route & route, uint32_t targetIndex);
+  void UpdateRouteTurns(uint32_t targetIndex);
   // FollowRoute has a bug where the router follows the route even if the method hads't been called.
   // This method was added because we do not want to break the behaviour that is familiar to our users.
   bool DisableFollowMode();
@@ -699,6 +700,7 @@ private:
   void RemoveRoute(bool deactivateFollowing);
 
   void InsertRoute(routing::Route const & route);
+  void InsertRouteLimited(routing::Route const & route, uint32_t targetIndex);
   void CheckLocationForRouting(location::GpsInfo const & info);
   void CheckLocationForRoutingLimited(location::GpsInfo const & info, uint32_t targetIndex);
   void CallRouteBuilded(routing::IRouter::ResultCode code,

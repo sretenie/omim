@@ -138,6 +138,19 @@ public:
 
   void EmitCloseRoutingEvent() const;
 
+  inline void UpdateTargetIndex(uint32_t targetIndex, bool append)
+  {
+    if (append)
+    {
+      m_targetIndex += targetIndex;
+    }
+    else
+    {
+      m_targetIndex = targetIndex;
+    }
+  }
+
+  uint32_t GetTargetIndex() const { return m_targetIndex; }
 private:
   struct DoReadyCallback
   {
@@ -174,6 +187,8 @@ private:
   SpeedCameraRestriction m_lastFoundCamera;
   // Index of a last point on a route checked for a speed camera.
   size_t m_lastCheckedSpeedCameraIndex;
+
+  uint32_t m_targetIndex;
 
   // TODO (ldragunov) Rewrite UI interop to message queue and avoid mutable.
   /// This field is mutable because it's modified in a constant getter. Note that the notification

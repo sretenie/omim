@@ -84,6 +84,36 @@ void Route::GetTurnsDistances(vector<double> & distances) const
    }
 }
 
+void Route::GetTurnsDistancesLimited(vector<double> & distances, uint32_t targetIndex) const
+{
+  double mercatorDistance = 0;
+  distances.clear();
+  auto const & polyline = m_poly.GetPolyline();
+  for (auto currentTurn = m_turns.begin(); currentTurn != m_turns.end(); ++currentTurn)
+  {
+    if (currentTurn->m_index > targetIndex)
+      break;
+
+    // Skip turns at side points of the polyline geometry. We can't display them properly.
+    if (currentTurn->m_index == 0 || currentTurn->m_index == (polyline.GetSize() - 1))
+      continue;
+
+    uint32_t formerTurnIndex = 0;
+    if (currentTurn != m_turns.begin())
+      formerTurnIndex = (currentTurn - 1)->m_index;
+
+    //TODO (ldragunov) Extract CalculateMercatorDistance higher to avoid including turns generator.
+    double const mercatorDistanceBetweenTurns =
+      turns::CalculateMercatorDistanceAlongPath(formerTurnIndex,  currentTurn->m_index, polyline.GetPoints());
+    mercatorDistance += mercatorDistanceBetweenTurns;
+
+    if (!currentTurn->m_wayPoint)
+    {
+      distances.push_back(mercatorDistance);
+    }
+   }
+}
+
 double Route::GetCurrentDistanceToEndMeters() const
 {
   return m_poly.GetDistanceToEndM();
@@ -270,9 +300,10 @@ void Route::FromJson(const string routeJson)
         routing::turns::PedestrianDirection cPedestrianTurnDirection = static_cast<routing::turns::PedestrianDirection>(pedestrianTurnDirection);
         string streetSource = item["streetSource"].GetString();
         string streetTarget = item["streetTarget"].GetString();
+        bool wayPoint = item["wayPoint"].GetBool_();
 
         routeTurns.push_back(routing::turns::TurnItem(index, cTurnDirection, exitNum,
-          keepAnyways, cPedestrianTurnDirection, streetSource, streetTarget));
+          keepAnyways, cPedestrianTurnDirection, streetSource, streetTarget, wayPoint));
     }
 
     SetGeometry(points.begin(), points.end());

@@ -57,6 +57,7 @@ RoutingSession::RoutingSession()
   , m_speedWarningSignal(false)
   , m_passedDistanceOnRouteMeters(0.0)
   , m_lastCompletionPercent(0.0)
+  , m_targetIndex(0)
 {
 }
 
@@ -75,6 +76,7 @@ void RoutingSession::AddRoute(Route & route)
     m_router->ClearState();
     m_isFollowing = false;
     m_routingRebuildCount = -1; // -1 for the first rebuild.
+    m_targetIndex = 0;
 
     RemoveRoute();
     m_state = RouteNotStarted;
@@ -92,6 +94,7 @@ void RoutingSession::ChangeRoute(Route & route)
     m_endPoint = route.GetPoly().GetPoint(route.GetPoly().GetPoints().size());
     m_router->ClearState();
     m_routingRebuildCount = -1; // -1 for the first rebuild.
+    m_targetIndex = 0;
 
     RemoveRoute();
     m_state = RouteNotStarted;
@@ -212,6 +215,7 @@ void RoutingSession::Reset()
   m_speedWarningSignal = false;
   m_isFollowing = false;
   m_lastCompletionPercent = 0;
+  m_targetIndex = 0;
 }
 
 RoutingSession::State RoutingSession::OnLocationPositionChanged(GpsInfo const & info, Index const & index)

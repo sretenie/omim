@@ -2387,7 +2387,7 @@ void Framework::BuildRouteBlocking(m2::PointD const & start, m2::PointD const & 
   m_routingSession.BuildRouteBlocking(start, finish, readyCallback, m_progressCallback, timeoutSec);
 }
 
-void Framework::AddRoute(routing::Route & route, bool animate)
+void Framework::AddRoute(routing::Route & route, bool animate, uint32_t targetIndex)
 {
     if (IsRoutingActive())
       CloseRouting();
@@ -2395,11 +2395,12 @@ void Framework::AddRoute(routing::Route & route, bool animate)
     double const kRouteScaleMultiplier = 1.5;
 
     SetLastUsedRouter(m_currentRouterType);
+
     m_routingSession.SetUserCurrentPosition(route.GetPoly().GetPoint(0));
-
     m_routingSession.AddRoute(route);
+    m_routingSession.UpdateTargetIndex(targetIndex, false);
 
-    InsertRoute(m_routingSession.GetRoute());
+    InsertRouteLimited(m_routingSession.GetRoute(), m_routingSession.GetTargetIndex());
     StopLocationFollow();
     if (animate)
     {
@@ -2409,13 +2410,23 @@ void Framework::AddRoute(routing::Route & route, bool animate)
     }
 }
 
-void Framework::ChangeRoute(routing::Route & route)
+void Framework::ChangeRoute(routing::Route & route, uint32_t targetIndex)
 {
     RemoveRoute(false /* deactivateFollowing */);
+
     m_routingSession.ChangeRoute(route);
-    InsertRoute(m_routingSession.GetRoute());
+    m_routingSession.UpdateTargetIndex(targetIndex, false);
+
+    InsertRouteLimited(m_routingSession.GetRoute(), m_routingSession.GetTargetIndex());
 //    if (!m_routingSession.IsFollowing())
 //        FollowRoute();
+}
+
+void Framework::UpdateRouteTurns(uint32_t targetIndex)
+{
+    m_routingSession.UpdateTargetIndex(targetIndex, true);
+
+    InsertRouteLimited(m_routingSession.GetRoute(), m_routingSession.GetTargetIndex());
 }
 
 void Framework::FollowRoute()
@@ -2542,6 +2553,26 @@ void Framework::InsertRoute(Route const & route)
   vector<double> turns;
   if (m_currentRouterType == RouterType::Vehicle)
     route.GetTurnsDistances(turns);
+
+  df::ColorConstant const routeColor = (m_currentRouterType == RouterType::Pedestrian) ?
+                                        df::RoutePedestrian : df::Route;
+  m_drapeEngine->AddRoute(route.GetPoly(), turns, routeColor);
+}
+
+void Framework::InsertRouteLimited(Route const & route, uint32_t targetIndex)
+{
+  if (m_drapeEngine == nullptr)
+    return;
+
+  if (route.GetPoly().GetSize() < 2)
+  {
+    LOG(LWARNING, ("Invalid track - only", route.GetPoly().GetSize(), "point(s)."));
+    return;
+  }
+
+  vector<double> turns;
+  if (m_currentRouterType == RouterType::Vehicle)
+    route.GetTurnsDistancesLimited(turns, targetIndex);
 
   df::ColorConstant const routeColor = (m_currentRouterType == RouterType::Pedestrian) ?
                                         df::RoutePedestrian : df::Route;

@@ -75,6 +75,7 @@ public:
   TTimes const & GetTimes() const { return m_times; }
   TStreets const & GetStreets() const { return m_streets; }
   void GetTurnsDistances(vector<double> & distances) const;
+  void GetTurnsDistancesLimited(vector<double> & distances, uint32_t targetIndex) const;
   string const & GetName() const { return m_name; }
   bool IsValid() const { return (m_poly.GetPolyline().GetSize() > 1); }
 
