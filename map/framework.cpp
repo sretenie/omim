@@ -652,6 +652,9 @@ void Framework::RegisterAllMaps()
 
 void Framework::DeregisterAllMaps()
 {
+  m_selectedFeature = FeatureID();
+  DeactivateMapSelection(false);
+  m_searchEngine->ClearCaches();
   m_model.Clear();
   m_storage.Clear();
 }
