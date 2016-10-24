@@ -193,6 +193,7 @@ public:
 
   /// Deregisters all registered map files.
   void DeregisterAllMaps();
+  void DeregisterAllMapsFixed();
 
   /// Registers a local map file in internal indexes.
   pair<MwmSet::MwmId, MwmSet::RegResult> RegisterMap(
