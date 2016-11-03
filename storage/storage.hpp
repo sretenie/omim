@@ -171,7 +171,7 @@ public:
   using TProgressFunction = function<void(TCountryId const &, MapFilesDownloader::TProgress const &)>;
   using TQueue = list<QueuedCountry>;
 
-  RegionPolygon LoadRegionPolygon(uint32_t regionId, string const & dataDir);
+  RegionPolygon LoadRegionPolygon(uint32_t regionId);
 
 private:
   /// We support only one simultaneous request at the moment

@@ -2470,8 +2470,7 @@ bool Framework::DisableFollowMode()
 
 void Framework::ShowRegionBorder(uint32_t regionId)
 {
-    string regionPath = GetPlatform().SettingsDir();
-    storage::RegionPolygon regionPoly = Storage().LoadRegionPolygon(regionId, regionPath);
+    storage::RegionPolygon regionPoly = Storage().LoadRegionPolygon(regionId);
     if (m_drapeEngine == nullptr || regionPoly.GetIndex() < 1)
       return;
 

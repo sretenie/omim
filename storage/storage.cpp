@@ -657,7 +657,7 @@ void Storage::LoadCountriesFile(string const & pathToCountriesFile, string const
   }
 }
 
-RegionPolygon Storage::LoadRegionPolygon(uint32_t regionId, string const & dataDir)
+RegionPolygon Storage::LoadRegionPolygon(uint32_t regionId)
 {
     if (m_regionPolygon.GetIndex() == regionId)
     {
@@ -666,23 +666,16 @@ RegionPolygon Storage::LoadRegionPolygon(uint32_t regionId, string const & dataD
 
     string regionIdStr = std::to_string(regionId);
     string fileName = REGION_POLY_FILE + regionIdStr + REGION_POLY_FORMAT;
-    string regionFile = my::JoinFoldersToPath(dataDir, fileName);
-    if (!dataDir.empty())
-    {
-      Platform & platform = GetPlatform();
-      platform.MkDir(regionFile);
-    }
-
     RegionPolygon regionPolygon;
     string jsonRegionPolygons;
-    LOG(LINFO, ("Region filename: ", regionFile));
+    LOG(LINFO, ("Region filename: ", fileName));
     try
     {
-        ReaderPtr<Reader>(GetPlatform().GetReader(regionFile)).ReadAsString(jsonRegionPolygons);
+        ReaderPtr<Reader>(GetPlatform().GetReader(fileName)).ReadAsString(jsonRegionPolygons);
     }
     catch(RootException const & e)
     {
-      LOG(LWARNING, ("Error reading file ", regionFile, " : ", e.what()));
+      LOG(LWARNING, ("Error reading file ", fileName, " : ", e.what()));
       return regionPolygon;
     }
 
