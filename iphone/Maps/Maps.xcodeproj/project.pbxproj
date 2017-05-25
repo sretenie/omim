@@ -4926,6 +4926,7 @@
 					"\"$(SRCROOT)/../../../omim-iphone-release-i386/out/release\"",
 					"$(PROJECT_DIR)/Statistics",
 				);
+				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-Wall",
 					"-Wno-unused-local-typedef",
